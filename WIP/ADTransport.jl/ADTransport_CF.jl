@@ -7,7 +7,7 @@
 
 # ## Preamble
 
-const debug=false
+const debug = false
 include("preamble.jl")
 
 @time_imports begin
@@ -29,7 +29,7 @@ Base.show(io::IO, ::Type{<:ForwardDiff.Tag}) = print(io, "Tag{...}") #src
 
 ## callable struct for loss function
 ## stores the forward model, its (constant) parameters and the target
-struct Loss{Forward, Target, Params}
+struct Loss{Forward,Target,Params}
     forward::Forward
     target::Target
     params::Params
@@ -41,7 +41,7 @@ function (loss::Loss)(state)
     if isnothing(params)
         new = forward(state)
     else
-        new = forward(state, params, 0.) # SciML signature du = f(u,p,t)
+        new = forward(state, params, 0.0) # SciML signature du = f(u,p,t)
     end
     return sum(abs2, new - target)
 end
@@ -73,7 +73,7 @@ function train!(loss, model, N, optim)
     @withprogress for i = 1:N
         l, g = Zygote.withgradient(loss, model)
         tree, model = Flux.Optimisers.update!(tree, model, g[1])
-        Flux.@logprogress i / N loss=l
+        Flux.@logprogress i / N loss = l
     end
     @info "final loss" loss(model)
     return model
@@ -82,7 +82,7 @@ end
 # ## Forward model definition
 # We adopt a non-mutating approach to allow backward AD with Zygote
 
-struct FluxFormTransport{Domain, UV, B}
+struct FluxFormTransport{Domain,UV,B}
     domain::Domain
     uv::UV
     manager::B
@@ -91,7 +91,7 @@ end
 Base.show(io::IO, model::FluxFormTransport) =
     print(io, "FluxFormTransport($(model.domain)) running on $(model.manager)")
 
-Base.show(io::IO, ::Type{FluxFormTransport{Domain, UV, B}}) where {Domain, UV, B} =
+Base.show(io::IO, ::Type{FluxFormTransport{Domain,UV,B}}) where {Domain,UV,B} =
     print(io, "FluxFormTransport($Domain, ..., $B}")
 
 ## FluxFormTransport instances are callable, so that we can
@@ -103,24 +103,25 @@ Base.show(io::IO, ::Type{FluxFormTransport{Domain, UV, B}}) where {Domain, UV, B
 ## *and* that they have a non-zero gradient (are used in the computation) !
 ## Hence we let `p` be an `ArrayPartition` storing the wind field.
 function (model::FluxFormTransport)(spec, p::ArrayPartition, t)
-    transport_flux(spec, (ucolat=p.x[1], ulon=p.x[2]), model.domain, model.manager)
+    transport_flux(spec, (ucolat = p.x[1], ulon = p.x[2]), model.domain, model.manager)
 end
 
 ## This form is for use as the `forward` field of a loss function.
 ## Wind field is not provided as parameter, we use the one stored in `model``
-(model::FluxFormTransport)(spec) = transport_flux(spec, model.uv, model.domain, model.manager)
+(model::FluxFormTransport)(spec) =
+    transport_flux(spec, model.uv, model.domain, model.manager)
 
-const nb_calls=Ref(0)
+const nb_calls = Ref(0)
 
 function transport_flux(f_spec, (ucolat, ulon), sph, manager)
-    nb_calls[] = nb_calls[]+1
+    nb_calls[] = nb_calls[] + 1
     f_spat = synthesis_scalar(f_spec, sph, manager) # get grid-point values of f
     fluxlon = @. -ulon * f_spat
     fluxcolat = @. -ucolat * f_spat
-    return analysis_div((ucolat=fluxcolat, ulon=fluxlon), sph, manager)
+    return analysis_div((ucolat = fluxcolat, ulon = fluxlon), sph, manager)
 end
 
-solid_body(x,y,z) = (sqrt(1-z*z), 0.)  # zonal solid-body "wind"
+solid_body(x, y, z) = (sqrt(1 - z * z), 0.0)  # zonal solid-body "wind"
 
 synthesis_scalar(spec, sph::SHTnsSphere, manager) = SHTnsSpheres.synthesis_scalar(spec, sph)
 analysis_div(uv, sph::SHTnsSphere, manager) = SHTnsSpheres.analysis_div(uv, sph)
@@ -133,30 +134,39 @@ end
 
 # ## Main program
 
-function setup(sph; alg=RK4(), Model=FluxFormTransport, lmax=128, courant=2.0, velocity=solid_body) # , options...)
-    F(x,y,z) = exp(-1000*(1-y)^4)        # initial "concentration"
+function setup(
+    sph;
+    alg = RK4(),
+    Model = FluxFormTransport,
+    lmax = 128,
+    courant = 2.0,
+    velocity = solid_body,
+) # , options...)
+    F(x, y, z) = exp(-1000 * (1 - y)^4)        # initial "concentration"
     @info toc("Initializing SHTns for lmax=$lmax")
     (; ucolat, ulon) = SHTnsSpheres.sample_vector(velocity, sph)
     p = ArrayPartition(ucolat, ulon)
     model = Model(sph, (ucolat, ulon), LoopManagers.PlainCPU())
-    dt = courant/sph.lmax
-    tspan = (0, 10*dt)
+    dt = courant / sph.lmax
+    tspan = (0, 10 * dt)
 
     function forward(spec0)
         ## we copy spec0 because SHTns may erase its inputs
         problem = ODEProblem(model, copy(spec0), tspan, p)
-        return last(solve(problem ; alg, dt, adaptive=false, saveat=last(tspan), options...).u)
+        return last(
+            solve(problem; alg, dt, adaptive = false, saveat = last(tspan), options...).u,
+        )
     end
     return model, initial_condition(F, model), forward, p
 end
 
 sph = SHTnsSpheres.SHTnsSphere(128);
-options = (; sensealg=InterpolatingAdjoint(; autojacvec=ZygoteVJP()))
+options = (; sensealg = InterpolatingAdjoint(; autojacvec = ZygoteVJP()))
 model, state, forward, p = setup(sph)
 dstate = randn(length(state)) .* state;
 
 let state = copy(state) # do not touch state !
-    target = forward(forward(state));
+    target = forward(forward(state))
     @info typeof(target)
     ## @profview forward(state);
 
@@ -174,6 +184,54 @@ forward_grad(loss4, state, dstate)
 
 # @profview optim_state = train!(loss4, copy(state), 100, Flux.Adam());
 GC.gc()
-nb_calls[]=0
+nb_calls[] = 0
 @time optim_state = train!(loss4, copy(state), 100, Flux.Adam());
 @info "Number of calls to model" nb_calls[]
+
+# obey SciML expectations of the r.h.s of an ODEProblem
+struct SciMLFun{Model}
+    model::model
+end
+(fun::SciMLFun)(u, p, t) = tendencies(fun.model, void, u, void, p, t) # du = tendencies(model, du, u, scratch, params, t)
+
+# obey our expectations for the r.h.s. of an ODE problem
+struct RHSFun{Model,Params}
+    model::Model
+    params::Params
+end
+(fun::RHSFun)(du, u, scratch, t) = fun.f(du, u, scratch, fun.params, t) # du = fun(du, u, scratch, params)
+
+includet("time.jl")
+
+struct ODE end
+
+tendencies(::Void, ::ODE, u, ::Void, t) = copy(u)
+tendencies(du::A, ::ODE, u::A, ::Nothing, t) where {A} = copy!(du, u)
+
+scratch_space(::ODE, u0) = nothing
+model_dstate(::ODE, u0) = similar(u0)
+
+function myloss(x0)
+    scheme = RungeKutta4(ODE())
+    solver = IVPSolver(scheme, 0.01, x0, false)
+    x, t = advance(void, solver, x0, 0.0, 100)
+    sum(abs2, x)
+end
+
+x = randn(1000)
+Zygote.gradient(myloss, x)
+@btime Zygote.gradient(myloss, $x)
+
+function loss(x0, dx, t)
+    scheme = RungeKutta4(ODE())
+    x = @. x0 + t * dx
+    solver = IVPSolver(scheme, 0.01, x, true)
+    y = advance(similar(x), solver, x, 0.0, 100)
+    sum(abs2, y)
+end
+
+x0 = randn(1000)
+dx = randn(1000)
+ForwardDiff.derivative(t->loss(x0, dx, t), 0.0)
+
+@btime ForwardDiff.derivative(t->loss($x0, $dx, t), 0.0)
