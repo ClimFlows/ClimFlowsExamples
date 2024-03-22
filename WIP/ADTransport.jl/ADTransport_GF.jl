@@ -41,7 +41,10 @@ Base.show(io::IO, ::Type{FluxFormTransport{Domain, UV, B}}) where {Domain, UV, B
 # ## Model definition
 # We adopt a non-mutating approach to allow backward AD with Zygote
 
+const nb_calls=Ref(0)
+
 function transport_flux(f_spec, (ucolat, ulon), sph, manager)
+    nb_calls[] = nb_calls[]+1
     f_spat = synthesis_scalar(f_spec, sph, manager) # get grid-point values of f
     fluxlon = @. -ulon * f_spat
     fluxcolat = @. -ucolat * f_spat
@@ -154,17 +157,20 @@ end
 model, scheme, state = setup() ;
 
 dstate = randn(length(state)) .* state;
-target = GFTimeSchemes.advance(state, scheme, model.manager);
+## we copy state because SHTns may overwrite its inputs
+target = GFTimeSchemes.advance(copy(state), scheme, model.manager);
 target = GFTimeSchemes.advance(target, scheme, model.manager);
 
 loss1(state) = sum(abs2, state)
 loss2 = Loss(model, dstate)
 loss3 = Loss(scheme, target)
+loss4 = Loss(scheme, state)
 
 forward_grad(loss1, state, dstate)
 forward_grad(loss2, state, dstate)
 forward_grad(loss3, state, dstate)
-
-loss4 = Loss(scheme, copy(state))
 forward_grad(loss4, state, dstate)
+
+nb_calls[] = 0
 @time optim_state = train!(loss4, state, 100, Flux.Adam());
+@info "Number of calls to model" nb_calls[]

@@ -24,53 +24,37 @@ Base.show(io::IO, ::Type{<:ForwardDiff.Tag}) = print(io, "Tag{...}") #src
 
 @info toc("Local definitions")
 
-#================== Generic ======================#
+# ## Loss function
+# Used for sanity checks and for inverse modelling.
 
-abstract type Transport end
-
-struct FluxFormTransport{Domain, UV, B} <: Transport
-    domain::Domain
-    uv::UV
-    manager::B
-end
-
-Base.show(io::IO, model::FluxFormTransport) =
-    print(io, "FluxFormTransport($(model.domain)) running on $(model.manager)")
-
-Base.show(io::IO, ::Type{FluxFormTransport{Domain, UV, B}}) where {Domain, UV, B} =
-    print(io, "FluxFormTransport($Domain, UV, $B}")
-
-# ## Model definition
-# We adopt a non-mutating approach to allow backward AD with Zygote
-
-function transport_flux(f_spec, (ucolat, ulon), sph, manager)
-    f_spat = synthesis_scalar(f_spec, sph, manager) # get grid-point values of f
-    fluxlon = @. -ulon * f_spat
-    fluxcolat = @. -ucolat * f_spat
-    return analysis_div((ucolat=fluxcolat, ulon=fluxlon), sph, manager)
-end
-
-solid_body(x,y,z) = (sqrt(1-z*z), 0.)  # zonal solid-body "wind"
-
-struct Loss{Scheme,Target}
-    scheme::Scheme
+## callable struct for loss function
+## stores the forward model, its (constant) parameters and the target
+struct Loss{Forward, Target, Params}
+    forward::Forward
     target::Target
+    params::Params
 end
+Loss(forward, target) = Loss(forward, target, nothing)
 
 function (loss::Loss)(state)
-    (; scheme, target) = loss
-    new = scheme(state)
+    (; forward, target, params) = loss
+    if isnothing(params)
+        new = forward(state)
+    else
+        new = forward(state, params, 0.) # SciML signature du = f(u,p,t)
+    end
     return sum(abs2, new - target)
 end
 
-# ## Double-check that gradients are correct
-# We check the Zygote gradient by computing
-# a directional gradient with ForwardDiff
+## Double-check that gradients are correct
+## We check the Zygote gradient by computing
+## a directional gradient with ForwardDiff
 
 @inline _cprod(z1, z2) = z1.re * z2.re + z1.im * z2.im
 cprod(a, b) = @inline mapreduce(_cprod, +, a, b)
 
 function forward_grad(loss, state, dstate)
+    state = copy(state)
     f(x) = loss(@. state + x * dstate)
     fwd_grad = ForwardDiff.derivative(f, 0.0)
     @time zyg_grad = cprod(Zygote.gradient(loss, state)[1], dstate)
@@ -95,7 +79,48 @@ function train!(loss, model, N, optim)
     return model
 end
 
-#================== ClimFlows + OrdinaryDiffEq ===============#
+# ## Forward model definition
+# We adopt a non-mutating approach to allow backward AD with Zygote
+
+struct FluxFormTransport{Domain, UV, B}
+    domain::Domain
+    uv::UV
+    manager::B
+end
+
+Base.show(io::IO, model::FluxFormTransport) =
+    print(io, "FluxFormTransport($(model.domain)) running on $(model.manager)")
+
+Base.show(io::IO, ::Type{FluxFormTransport{Domain, UV, B}}) where {Domain, UV, B} =
+    print(io, "FluxFormTransport($Domain, ..., $B}")
+
+## FluxFormTransport instances are callable, so that we can
+## create a loss function from them.
+
+## This form conforms to SciML requirements.
+## Although we do not optimize model parameters, only the initial condition,
+## SciML *requires* that we provide model parameters `p`, that they be Array-like
+## *and* that they have a non-zero gradient (are used in the computation) !
+## Hence we let `p` be an `ArrayPartition` storing the wind field.
+function (model::FluxFormTransport)(spec, p::ArrayPartition, t)
+    transport_flux(spec, (ucolat=p.x[1], ulon=p.x[2]), model.domain, model.manager)
+end
+
+## This form is for use as the `forward` field of a loss function.
+## Wind field is not provided as parameter, we use the one stored in `model``
+(model::FluxFormTransport)(spec) = transport_flux(spec, model.uv, model.domain, model.manager)
+
+const nb_calls=Ref(0)
+
+function transport_flux(f_spec, (ucolat, ulon), sph, manager)
+    nb_calls[] = nb_calls[]+1
+    f_spat = synthesis_scalar(f_spec, sph, manager) # get grid-point values of f
+    fluxlon = @. -ulon * f_spat
+    fluxcolat = @. -ucolat * f_spat
+    return analysis_div((ucolat=fluxcolat, ulon=fluxlon), sph, manager)
+end
+
+solid_body(x,y,z) = (sqrt(1-z*z), 0.)  # zonal solid-body "wind"
 
 synthesis_scalar(spec, sph::SHTnsSphere, manager) = SHTnsSpheres.synthesis_scalar(spec, sph)
 analysis_div(uv, sph::SHTnsSphere, manager) = SHTnsSpheres.analysis_div(uv, sph)
@@ -106,17 +131,7 @@ function initial_condition(f, model::FluxFormTransport{SHTnsSpheres.SHTnsSphere}
     f = SHTnsSpheres.analysis_scalar(f, domain)
 end
 
-function (loss::Loss{FluxFormTransport{<:SHTnsSpheres.SHTnsSphere}})(state)
-    model = loss.scheme
-    dstate = model(state)
-    return sum(abs2, dstate)
-end
-
-(model::FluxFormTransport)(spec) = transport_flux(spec, model.uv, model.domain, model.manager)
-
-function (model::FluxFormTransport)(spec, p, t)
-    transport_flux(spec, (ucolat=p.x[1], ulon=p.x[2]), model.domain, model.manager)
-end
+# ## Main program
 
 function setup(sph; alg=RK4(), Model=FluxFormTransport, lmax=128, courant=2.0, velocity=solid_body) # , options...)
     F(x,y,z) = exp(-1000*(1-y)^4)        # initial "concentration"
@@ -128,29 +143,37 @@ function setup(sph; alg=RK4(), Model=FluxFormTransport, lmax=128, courant=2.0, v
     tspan = (0, 10*dt)
 
     function forward(spec0)
-        problem = ODEProblem(model, spec0, tspan, p)
+        ## we copy spec0 because SHTns may erase its inputs
+        problem = ODEProblem(model, copy(spec0), tspan, p)
         return last(solve(problem ; alg, dt, adaptive=false, saveat=last(tspan), options...).u)
     end
-    return model, initial_condition(F, model), forward
+    return model, initial_condition(F, model), forward, p
 end
 
 sph = SHTnsSpheres.SHTnsSphere(128);
 options = (; sensealg=InterpolatingAdjoint(; autojacvec=ZygoteVJP()))
-model, state, forward = setup(sph)
-
+model, state, forward, p = setup(sph)
 dstate = randn(length(state)) .* state;
-target = forward(forward(state));
-@info typeof(target)
-# @profview forward(state);
 
-loss1(state) = sum(abs2, state)
-loss2 = Loss(model, dstate)
-loss3 = Loss(forward, target)
+let state = copy(state) # do not touch state !
+    target = forward(forward(state));
+    @info typeof(target)
+    ## @profview forward(state);
 
-forward_grad(loss1, state, dstate)
-forward_grad(loss2, state, dstate)
-forward_grad(loss3, state, dstate)
+    loss1(state) = sum(abs2, state)
+    loss2 = Loss(model, dstate, p)
+    loss3 = Loss(forward, target)
 
-loss4 = Loss(forward, copy(state))
+    forward_grad(loss1, state, dstate)
+    forward_grad(loss2, state, dstate)
+    forward_grad(loss3, state, dstate)
+end
+
+loss4 = Loss(forward, copy(state)) # target = frozen copy of `state`
 forward_grad(loss4, state, dstate)
-@profview optim_state = train!(loss4, state, 100, Flux.Adam());
+
+# @profview optim_state = train!(loss4, copy(state), 100, Flux.Adam());
+GC.gc()
+nb_calls[]=0
+@time optim_state = train!(loss4, copy(state), 100, Flux.Adam());
+@info "Number of calls to model" nb_calls[]
