@@ -15,7 +15,7 @@ include("preamble.jl")
                         synthesis_scalar!, analysis_vector!, divergence!,
                         sample_vector!, sample_scalar!
 
-    import Flux, Zygote, ForwardDiff, ChainRulesCore
+    import Flux, Zygote, ForwardDiff
     using Flux.Optimise: @withprogress, @logprogress
 end
 
