@@ -1,8 +1,7 @@
 cd(@__DIR__)
 import Pkg;
 Pkg.activate(@__DIR__); #src
-unique!(push!(LOAD_PATH, "$(@__DIR__)/../include")) #src
-#!nb import Pkg ; Pkg.activate(@__DIR__)
+unique!(push!(LOAD_PATH, "$(@__DIR__)/../include/"))
 
 using InteractiveUtils
 
