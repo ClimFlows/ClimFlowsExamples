@@ -38,7 +38,7 @@ function Base.show(io::IO, (; sph, fcov, radius)::RSW)
     print(io, "RSW($sph, Omega=$Omega, radius=$radius)")
 end
 
-# these "constructors" are *required* for type stability
+# these "constructors" seem to help  for type stability
 vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
 RSW_state(gh_spec, uv_spec) = (; gh_spec, uv_spec)
@@ -48,7 +48,7 @@ function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
     # vector, spectral = (spheroidal, toroidal)
     # vector, spatial = (ucolat, ulon)
     (; sph, radius, fcov) = model
-    #    (; flux, gh, uv, B, B_spec, zeta, zeta_spec, qflux, qflux_spec) = scratch
+    (; gh, uv, flux, flux_spec, B, B_spec, zeta, zeta_spec, qflux, qflux_spec) = scratch
     (; uv_spec, gh_spec) = state
     duv_spec, dgh_spec = dstate.uv_spec, dstate.gh_spec
     invrad2 = radius^-2
@@ -57,13 +57,13 @@ function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
     # uv is the momentum 1-form = radius^2*velocity
     # gh is the 2-form radius^2*gh
     # => scale flux by radius^-2
-    gh = synthesis_scalar!(scratch.gh, state.gh_spec, sph)
-    uv = synthesis_vector!(scratch.uv, state.uv_spec, sph)
+    gh = synthesis_scalar!(gh, gh_spec, sph)
+    uv = synthesis_vector!(uv, uv_spec, sph)
     flux = vector_spat(
-        (@. scratch.flux.ucolat = -invrad2 * gh * uv.ucolat),
-        (@. scratch.flux.ulon = -invrad2 * gh * uv.ulon),
+        (@. flux.ucolat = -invrad2 * gh * uv.ucolat),
+        (@. flux.ulon = -invrad2 * gh * uv.ulon),
     )
-    flux_spec = analysis_vector!(scratch.flux_spec, flux, sph)
+    flux_spec = analysis_vector!(flux_spec, flux, sph)
     dgh_spec = divergence!(dgh_spec, flux_spec, sph)
 
     # momentum budget:
@@ -73,15 +73,15 @@ function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
     # uv is momentum = radius^2*velocity
     # fcov, ζ and gh are 2-forms
     # => scale B and qflux by radius^-2
-    zeta_spec = curl!(scratch.zeta_spec, uv_spec, sph)
-    zeta = synthesis_scalar!(scratch.zeta, zeta_spec, sph)
+    zeta_spec = curl!(zeta_spec, uv_spec, sph)
+    zeta = synthesis_scalar!(zeta, zeta_spec, sph)
     qflux = vector_spat(
-        (@. scratch.qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon),
-        (@. scratch.qflux.ulon = -invrad2 * (zeta + fcov) * uv.ucolat),
+        (@. qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon),
+        (@. qflux.ulon = -invrad2 * (zeta + fcov) * uv.ucolat),
     )
-    B = @. scratch.B = invrad2 * (gh + (uv.ucolat^2 + uv.ulon^2) / 2)
-    B_spec = analysis_scalar!(scratch.B_spec, B, sph)
-    qflux_spec = analysis_vector!(scratch.qflux_spec, qflux, sph)
+    B = @. B = invrad2 * (gh + (uv.ucolat^2 + uv.ulon^2) / 2)
+    B_spec = analysis_scalar!(B_spec, B, sph)
+    qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
     duv_spec = vector_spec(
         (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
         (@. duv_spec.toroidal = qflux_spec.toroidal),
