@@ -50,10 +50,10 @@ Respectively equivalent to:
     new = @. old + factor*increment
 Operates recursively on nested tuples / named tuples
 """
-update!(x, u::S, ka::S, a::F) where {F, S<:NamedTuple} = LinUp((a,))(x,u,(ka,))
-update!(x, u::S, ka::S, a::F, kb::S, b::F) where {F, S<:NamedTuple} = LinUp((a,b))(x,u,(ka,kb))
-update!(x, u::S, ka::S, a::F, kb::S, b::F, kc::S, c::F) where {F, S<:NamedTuple} = LinUp((a,b,c))(x,u,(ka,kb,kc))
-update!(x, u::S, ka::S, a::F, kb::S, b::F, kc::S, c::F, kd::S, d::F) where {F, S<:NamedTuple} = LinUp((a,b,c,d))(x,u,(ka,kb,kc,kd))
+update!(x, u::S, a::F, ka::S) where {F, S} = LinUp((a,))(x,u,(ka,))::S
+update!(x, u::S, a::F, ka::S, b::F, kb::S) where {F, S} = LinUp((a,b))(x,u,(ka,kb))::S
+update!(x, u::S, a::F, ka::S, b::F, kb::S, c::F, kc::S) where {F, S} = LinUp((a,b,c))(x,u,(ka,kb,kc))::S
+update!(x, u::S, a::F, ka::S, b::F, kb::S, c::F, kc::S, d::F, kd::S) where {F, S} = LinUp((a,b,c,d))(x,u,(ka,kb,kc,kd))::S
 
 struct LinUp{F,N} # linear update with coefs=(a,b, ...)
     coefs::NTuple{N,F}
@@ -135,7 +135,7 @@ function advance!(storage::Union{Void, State}, (; dt, scheme, scratch)::IVPSolve
     @assert typeof(t)==typeof(dt)
     state = advance!(storage, scheme, state, t, dt, scratch)::State
     for i=2:N
-        state = advance!(storage, scheme, state, t+(i-1)*dt, dt, scratch)
+        state = advance!(storage, scheme, state, t+(i-1)*dt, dt, scratch)::State
     end
     return state, t+N*dt
 end
@@ -155,18 +155,18 @@ function scratch_space((; model)::RungeKutta4, u0)
 end
 
 function advance!(future, (; model)::RungeKutta4, u0, t0, dt, (; scratch, k0, k1, k2, k3))
-    k0_ = tendencies!(k0, model, u0, scratch, t0)
+    k0 = tendencies!(k0, model, u0, scratch, t0)
     # u1 = u0 + dt/2*k0
-    u1 = update!(future, u0, k0_, dt / 2)
-    k1_ = tendencies!(k1, model, u1, scratch, t0 + dt / 2)
+    u1 = update!(future, u0, dt / 2, k0)
+    k1 = tendencies!(k1, model, u1, scratch, t0 + dt / 2)
     # u2 = u1 - dt/2*k0 + dt/2*k1 == u0 + dt/2*k1
-    u2 = update!(future, u1, k0_, -dt / 2, k1_, dt / 2)
-    k2_ = tendencies!(k2, model, u2, scratch, t0 + dt / 2)
+    u2 = update!(future, u1, -dt / 2, k0, dt / 2, k1)
+    k2 = tendencies!(k2, model, u2, scratch, t0 + dt / 2)
     # u3 = u2 - dt/2*k1 + dt*k2 == u0 + dt*k2
-    u3 = update!(future, u2, k1_, -dt / 2, k2_, dt)
-    k3_ = tendencies!(k3, model, u3, scratch, t0 + dt)
+    u3 = update!(future, u2, -dt / 2, k1, dt, k2)
+    k3 = tendencies!(k3, model, u3, scratch, t0 + dt)
     # u4 = u0 + (k0+k3)*(dt/6) + (k1+k2)*(dt/3)
-    future = update!(future, u3, k0_, dt / 6, k1_, dt / 3, k2_, -2dt / 3, k3_, dt / 6)
+    future = update!(future, u3, dt / 6, k0, dt / 3, k1, -2dt / 3, k2, dt / 6, k3)
     return future
 end
 
