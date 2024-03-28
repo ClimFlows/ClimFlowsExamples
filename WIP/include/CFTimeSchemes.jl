@@ -26,13 +26,6 @@ Computes tendencies. Pass `void` to arguments `dstate` and `scratch` for non-mut
 """
 function tendencies! end
 
-"""
-    dstate = tendencies(model, u, t)
-computes tendencies (non-mutating). Default implementation:
-    tendencies(model, u, t) = tendencies!(void, model, u, void, t)
-"""
-tendencies(model, u, t) = tendencies!(void, model, u, void, t)
-
 # Time scheme
 """
     stages = time_stages(scheme, model, u0)
@@ -45,7 +38,7 @@ function time_stages end
     future, t = advance!(void, scheme, present, t, dt, void)
 Integrate in time by one time step, respectively mutating (non-allocating) and non-mutating
 """
-function advance end
+function advance! end
 
 """
     new = update!(new, new, increment, factor)
@@ -57,22 +50,60 @@ Respectively equivalent to:
     new = @. old + factor*increment
 Operates recursively on nested tuples / named tuples
 """
-@inline update!(x, u, k, dt) = @. x = u + dt * k
-@inline update!(x, u, ka, a, kb, b) = @. x = u + a * ka + b * kb
-@inline update!(x, u, ka, a, kb, b, kc, c) = @. x = u + a * ka + b * kb + c * kc
-@inline update!(x, u, ka, a, kb, b, kc, c, kd, d) = @. x = u + a * ka + b * kb + c * kc + d * kd
+update!(x, u::S, ka::S, a::F) where {F, S<:NamedTuple} = LinUp((a,))(x,u,(ka,))
+update!(x, u::S, ka::S, a::F, kb::S, b::F) where {F, S<:NamedTuple} = LinUp((a,b))(x,u,(ka,kb))
+update!(x, u::S, ka::S, a::F, kb::S, b::F, kc::S, c::F) where {F, S<:NamedTuple} = LinUp((a,b,c))(x,u,(ka,kb,kc))
+update!(x, u::S, ka::S, a::F, kb::S, b::F, kc::S, c::F, kd::S, d::F) where {F, S<:NamedTuple} = LinUp((a,b,c,d))(x,u,(ka,kb,kc,kd))
+
+struct LinUp{F,N} # linear update with coefs=(a,b, ...)
+    coefs::NTuple{N,F}
+end
+
+# LinUp on arrays
+# Currently limited to 4-stage schemes
+
+function (up::LinUp{F,1})(x, u::A, ks::NTuple{1,A}) where {F, A<:Array}
+    ka, = ks
+    a, = up.coefs
+    return @. x = muladd(a, ka, u)
+end
+function (up::LinUp{F,2})(x, u::A, ks::NTuple{2,A}) where {F, A<:Array}
+    ka, kb = ks
+    a, b = up.coefs
+    return @. x = muladd(b, kb, muladd(a, ka, u))
+end
+function (up::LinUp{F,3})(x, u::A, ks::NTuple{3,A}) where {F, A<:Array}
+    ka, kb, kc = ks
+    a, b, c = up.coefs
+    return @. x = muladd(c, kc, muladd(b, kb, muladd(a, ka, u)))
+end
+function (up::LinUp{F,4})(x, u::A, ks::NTuple{4,A}) where {F, A<:Array}
+    ka, kb, kc, kd = ks
+    a, b, c, d = up.coefs
+    return @. x = muladd(d, kd, muladd(c, kc, muladd(b, kb, muladd(a, ka, u))))
+end
+
+# LinUp on named tuples
 
 svoid(::Void, u) = map(uu->void, u)
 svoid(x, u) = x
 
-const TNT = Union{<:Tuple, <:NamedTuple}
+function (up::LinUp{F,N})(x, u::NT, ka::NTuple{N,NT}) where {F, N, names, NT<:NamedTuple{names}}
+    return map(up, svoid(x,u), u, transp(ka))
+end
 
-@inline update!(x, u::TNT, ka, a) = @inline map((xx,uu,aa)->update!(xx, uu, aa, a), svoid(x,u), u, ka)
-@inline update!(x, u::TNT, ka, a, kb, b) = @inline map((xx,uu,aa,bb)->update!(xx,uu,aa,a,bb,b), svoid(x,u), u, ka, kb)
-@inline update!(x, u::TNT, ka, a, kb, b, kc, c) = @inline map((xx,uu,aa,bb,cc)->update!(xx,uu,aa,a,bb,b,cc,c), svoid(x,u), u, ka, kb, kc)
-@inline update!(x, u::TNT, ka, a, kb, b, kc, c, kd, d) = @inline map((xx,uu,aa,bb,cc,dd)->update!(xx,uu,aa,a,bb,b,cc,c,dd,d), svoid(x,u), u, ka, kb, kc, kd)
+@inline function transp(ntup::NTuple{N,NT}) where {N, names, NT<:NamedTuple{names}}
+    M = length(names) # compile-time constant
+    getindexer(i) = coll->coll[i]
+    t = ntuple(
+        let nt=ntup
+            i->map(getindexer(i), nt)
+        end,
+        Val{M}())
+    return NamedTuple{names}(t)
+end
 
-# IVPSolver
+# Initial-value problem solver
 """
     solver = IVPSolver(model, scheme, dt, u0, mutating=false)
     solver = IVPSolver(model, scheme, dt)

@@ -24,6 +24,7 @@ include("preamble.jl")
     using ClimFlowsTestCases: Williamson91, testcase, describe, initial_flow
 
     using CFTimeSchemes: CFTimeSchemes, advance!
+    using BenchmarkTools
 end
 
 struct RSW{F}
@@ -40,7 +41,7 @@ end
 # these "constructors" are *required* for type stability
 vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
-RSW_state(gh_spec, uv_spec) = (; uv_spec, gh_spec)
+RSW_state(gh_spec, uv_spec) = (; gh_spec, uv_spec)
 
 function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
     # spectral fields are suffixed with _spec
@@ -136,15 +137,16 @@ sph = SHTnsSpheres.SHTnsSphere(128)
 case = testcase(Williamson91{6}, Float64)
 model, scheme, solver, state0 = setup(case, sph);
 
-if false
-    using BenchmarkTools
+if true
     future = deepcopy(state0);
 
     advance!(future, solver(true), state0, 0.0, 100);
-    @profview advance!(future, solver(true), state0, 0.0, 100);
-    @btime advance!($future, solver(true), $state0, 0.0, 100);
+    @time advance!(future, solver(true), state0, 0.0, 100);
+    display(@benchmark advance!($future, solver(true), $state0, 0.0, 100))
+#    @profview advance!(future, solver(true), state0, 0.0, 100);
 
     advance!(void, solver(), state0, 0.0, 100);
-    @profview advance!(void, solver(), state0, 0.0, 100);
-    @btime advance!(void, solver(), $state0, 0.0, 100);
+    @time advance!(void, solver(), state0, 0.0, 100);
+    display(@benchmark advance!(void, solver(), $state0, 0.0, 100))
+#    @profview advance!(void, solver(), state0, 0.0, 100);
 end
