@@ -6,7 +6,6 @@ module All
 using Plots
 
 function make(T, params ; kwargs...)
- #   @info (@__LINE__) params kwargs merge(params, kwargs)
     T((getproperty(merge(params, kwargs), name) for name in fieldnames(T))...)
 end
 
@@ -27,10 +26,10 @@ struct RadiativeConvective{F}
     emissiv::F
 end
 function RadiativeConvective(params)
-    (; coefvis, ps) = params
+    (; coefvis, coefir, ps, g) = params
     make(RadiativeConvective, params ;
-        c_sw = -(1//2)*log(coefvis)/(ps),
-        c_lw = -log(params.coefir)/sqrt((params.ps)^2/(2*params.g)))
+        c_sw = -(1//2)*log(coefvis)/ps,
+        c_lw = -log(coefir)/ps )
 end
 
 struct SolarFlux{F, Fun}
@@ -60,7 +59,7 @@ end
 planck(T, radconv) = radconv.stephan*(T^2)^2
 
 function tau_lw(pi, pj, (; g, c_lw))
-    zdup = (pj^2-pi^2)/(2g)
+    zdup = pj^2-pi^2
     return @fastmath exp(-c_lw*sqrt(zdup))
 end
 
@@ -136,22 +135,20 @@ end
 # Ensures zero net radiative flux, given downward LW and total SW (positive upwards)
 surface_temperature(params, down_lw, tot_sw) = ((down_lw-tot_sw/params.emissiv)/params.stephan)^(1//4)
 
-function radiative_balance(solarflux, dt, radconv, temp, p_int)
-    n = length(temp)
+function radiative_balance(solarflux, gdt, radconv, temp, p_int)
+    Cp, n = radconv.Cp, length(temp)
     flux_down_sw = sw_down(solarflux, radconv, p_int)
     flux_up_sw   = sw_up(radconv, flux_down_sw, p_int)
     flux_down_lw = lw_down(temp, radconv, p_int)
 
     t_s = surface_temperature(radconv, flux_down_lw[1], flux_up_sw[1]-flux_down_sw[1])
-
     flux_up_lw = lw_up(t_s, radconv, flux_down_lw, temp, p_int)
 
     conv_flux(up, down, i) = (up[i]-up[i+1]) + (down[i+1]-down[i])
-
-    @fastmath for i in 1:n
-        Cp_dp = radconv.Cp*(p_int[i]-p_int[i+1])
-        dT = (radconv.g/Cp_dp) * (conv_flux(flux_up_sw, flux_down_sw, i) + conv_flux(flux_up_lw, flux_down_lw, i))
-        temp[i] += dt*dT
+    for i in 1:n
+        Cp_dp = Cp*(p_int[i]-p_int[i+1])
+        dT = inv(Cp_dp) * (conv_flux(flux_up_sw, flux_down_sw, i) + conv_flux(flux_up_lw, flux_down_lw, i))
+        temp[i] += gdt*dT
     end
 
     return t_s
@@ -167,7 +164,7 @@ function temp_ev(t_f, radconv, solarflux, choices, params, temp, p_int, p_layer,
 
     for t in 1:params.dt:t_f
 
-        t_s = radiative_balance(solarflux(t), params.dt, radconv, temp, p_int)
+        t_s = radiative_balance(solarflux(t), params.g*params.dt, radconv, temp, p_int)
         choices.adjust && adjust_Nlayers!(radconv, p_layer, temp)
 
         if t in l
