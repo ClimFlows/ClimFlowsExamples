@@ -1,10 +1,12 @@
-using Pkg; Pkg.activate(@__DIR__)
-using Revise
+# using Pkg; Pkg.activate(@__DIR__)
+# using Revise
+
+module All
 
 using Plots
 
 function make(T, params ; kwargs...)
-    @info (@__LINE__) params kwargs merge(params, kwargs)
+ #   @info (@__LINE__) params kwargs merge(params, kwargs)
     T((getproperty(merge(params, kwargs), name) for name in fieldnames(T))...)
 end
 
@@ -47,19 +49,15 @@ end
 
 function sw_up(radconv, flux_down, p_int)
     (; c_sw, alb) = radconv
-    ps, flux_up_surf = p_int[1], flux_down[1]
+    ps, flux_up_surf = p_int[1], alb*flux_down[1]
     return @. flux_up_surf * exp(-c_sw*(ps - p_int)*(5//3))
 end
+
+#======================  Longwave ====================#
 
 # Black body radiation
 
 planck(T, radconv) = radconv.stephan*(T^2)^2
-
-# Equilibrium surface temperature
-# Ensures zero net radiative flux, given downward LW and total SW (positive upwards)
-surface_temperature(params, down_lw, tot_sw) = ((down_lw-tot_sw/params.emissiv)/params.stephan)^(1//4)
-
-#======================  Longwave ====================#
 
 function tau_lw(pi, pj, (; g, c_lw))
     zdup = (pj^2-pi^2)/(2g)
@@ -133,6 +131,10 @@ function adjust_Nlayers!(radconv, p, T)
 end
 
 # ================= Radiative balance ================#
+
+# Equilibrium surface temperature
+# Ensures zero net radiative flux, given downward LW and total SW (positive upwards)
+surface_temperature(params, down_lw, tot_sw) = ((down_lw-tot_sw/params.emissiv)/params.stephan)^(1//4)
 
 function radiative_balance(solarflux, dt, radconv, temp, p_int)
     n = length(temp)
@@ -213,7 +215,7 @@ function main(ndays=1000, nn=30)
 
     p_int, p_layer = sigma_pressure(choices.n, params.ps)
     temp = fill(params.T0, choices.n)
-    @profview temp, Y = temp_ev(3600*24*ndays, radconv, solarflux, choices, params, temp, p_int, p_layer)
+    temp, Y = temp_ev(3600*24*ndays, radconv, solarflux, choices, params, temp, p_int, p_layer)
     temp, Y = temp_ev(3600*24*2, radconv, solarflux, choices, params, temp, p_int, p_layer, 24*2)
 
     println(temp)
@@ -222,4 +224,7 @@ function main(ndays=1000, nn=30)
     display(plot([potential_temperature.(Ref(radconv), p_layer[1:nn], Y[k,2:nn+1]) for k in axes(Y,1)], p_layer[1:nn] ; yflip=true))
 end
 
-main()
+end # module
+using .All
+
+# All.main()
