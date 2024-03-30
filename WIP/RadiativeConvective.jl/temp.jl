@@ -53,7 +53,7 @@ function main()
     p_layer = zeros(params.n)
 
     for i in 1:params.n +1
-        p_int[i]=params.ps*(1-(i/(params.n+1)))
+        p_int[i]=params.ps*(1-(i-1)/params.n)
     end
     for i in 1:params.n
         p_layer[i] = (p_int[i]+p_int[i+1])/2
