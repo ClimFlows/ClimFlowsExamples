@@ -25,7 +25,12 @@ include("preamble.jl")
 
     using CFTimeSchemes: CFTimeSchemes, advance!
     using BenchmarkTools
+
+    using GeoMakie, CairoMakie, ColorSchemes
+    using CookBooks
 end
+includet("diagnostics.jl")
+includet("maps.jl")
 
 struct RSW{F}
     sph::SHTnsSphere
@@ -38,7 +43,7 @@ function Base.show(io::IO, (; sph, fcov, radius)::RSW)
     print(io, "RSW($sph, Omega=$Omega, radius=$radius)")
 end
 
-# these "constructors" seem to help  for type stability
+# these "constructors" seem to help with type stability
 vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
 RSW_state(gh_spec, uv_spec) = (; gh_spec, uv_spec)
@@ -54,7 +59,7 @@ function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
     invrad2 = radius^-2
 
     # mass budget: ∂gh/∂t = -∇(gh*ux, gh*uy)
-    # uv is the momentum 1-form = radius^2*velocity
+    # uv is the momentum 1-form = radius*velocity
     # gh is the 2-form radius^2*gh
     # => scale flux by radius^-2
     gh = synthesis_scalar!(gh, gh_spec, sph)
@@ -107,35 +112,67 @@ CFTimeSchemes.model_dstate((; sph)::RSW, (; gh_spec, uv_spec)) =
 
 # setup
 
-function setup(case, sph, courant = 2.0)
-    radius = case.params.R0
-    f(n) = map((lon, lat) -> initial_flow(lon, lat, case)[n], sph.lon, sph.lat)
-    ulon, ulat, gH = f(1), f(2), f(3)
+function initial_state(model, gh, ulon, ulat)
+    (; radius) = model
+    uv_spec = analysis_vector!(void, vector_spat(-radius * ulat, radius * ulon), sph)
+    gh_spec = analysis_scalar!(void, radius^2*gh, sph)
+    RSW_state(gh_spec, uv_spec)
+end
 
-    uv_spec = analysis_vector!(void, vector_spat(-(radius^2) * ulat, (radius^2) * ulon), sph)
-    gh_spec = analysis_scalar!(void, gH, sph)
-    state0 = RSW_state(gh_spec, uv_spec)
+function setup(case, sph ; courant = 2.0, interval=3600.0)
+    radius = case.params.R0
 
     fcov = (2 * radius^2 * case.params.Omega) * sph.z
     model = RSW(sph, fcov, radius)
+
+    f(n) = map((lon, lat) -> initial_flow(lon, lat, case)[n], sph.lon, sph.lat)
+    gh, ulon, ulat = f(1), f(2), f(3)
+    state0 = initial_state(model, gh, ulon, ulat)
 
     # time step based on maximum angular velocity of gravity waves
     umax = sqrt(maximum(@. ulon^2 + ulat^2))
     cmax = (umax + sqrt(case.params.gH0)) / radius
     dt = courant / cmax / sqrt(sph.lmax * sph.lmax + 1)
+    dt = divisor(dt, interval)
+    @info "Time step" umax, cmax, dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
     return model, scheme, solver, state0
 end
 
-ideal_time_step(dt, T) = T / Int(ceil(T / dt))
+divisor(dt, T) = T / Int(ceil(T / dt))
 
 # main program
 
 sph = SHTnsSpheres.SHTnsSphere(128)
-case = testcase(Williamson91{6}, Float64)
-model, scheme, solver, state0 = setup(case, sph);
+case = testcase(Williamson91{2}, Float64)
+interval = 3600.0
+model, scheme, solver, state0 = setup(case, sph ; interval)
+book = diagnostics()
+
+# Create a Makie observable and make a plot from it
+# When we later update pv, the plot will update too.
+pv = open(book; model, state=state0) do diags
+    pv = diags.potential_vorticity
+    pv = max.(0.0, pv)
+    Makie.Observable(transpose(pv))
+end
+
+# see https://docs.makie.org/stable/explanations/colors/index.html for colomaps
+lons = bounds_lon(model.sph.lon[1,:]*(180/pi))
+lats = bounds_lat(model.sph.lat[:,1]*(180/pi))
+fig = orthographic(lons, lats, pv; colormap = :bam10)
+
+state = deepcopy(state0)
+solver! = solver(true)
+@profview advance!(state, solver!, state0, 0.0, 10*24*Int(interval/solver!.dt))
+
+open(book; model, state) do diags
+    pv[] = transpose(max.(0.0, diags.potential_vorticity))
+end
+display(fig)
+
 
 if true
     future = deepcopy(state0);
