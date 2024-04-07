@@ -21,13 +21,24 @@ include("preamble.jl")
     using CookBooks
 end
 
-struct RSW{F}
+struct HyperDiffusion{F}
+    n::Int
+    nu::F
+end
+
+function (hd::HyperDiffusion)(storage, coefs, sph)
+    (; n, nu), (; laplace, lmax) = hd, sph
+    @. storage = (1-nu*(-laplace/(lmax*(lmax+1)))^n)*coefs
+end
+
+struct RSW{F, HD}
     sph::SHTnsSphere
     fcov::Matrix{F} # 2-form: fcov = 2Ω * radius^2 * sin(latitude)
     radius::F
+    filter::HD
 end
 
-RSW(sph, Omega::Real, radius) = RSW(sph, (2 * radius^2 * Omega) * sph.z, radius)
+RSW(sph, Omega::Real, radius, hd) = RSW(sph, (2 * radius^2 * Omega) * sph.z, radius, hd)
 
 function Base.show(io::IO, (; sph, fcov, radius)::RSW)
     Omega = maximum(fcov) / 2 * radius^-2
@@ -139,10 +150,10 @@ function initial_state(model, gh, ulon, ulat)
     RSW_state(gh_spec, uv_spec)
 end
 
-function setup(case, sph ; courant = 2.0, interval=3600.0)
+function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
     radius = case.params.R0
-
-    model = RSW(sph, case.params.Omega, radius)
+    hd = HyperDiffusion(hd_n, hd_nu)
+    model = RSW(sph, case.params.Omega, radius, hd)
 
     f(n) = map((lon, lat) -> initial_flow(lon, lat, case)[n], sph.lon, sph.lat)
     gh, ulon, ulat = f(1), f(2), f(3)
@@ -194,9 +205,17 @@ solver! = solver(true)
 @time let N=240 # number of hours to simulate
     # separate thread running the simulation
     channel = Channel(spawn=true) do ch
+        state = deepcopy(state0)
         nstep = Int(interval/solver!.dt)
         for iter in 1:N
-            advance!(state, solver!, state, 0.0, nstep)
+            for istep in 1:nstep
+                advance!(state, solver!, state, 0.0, 1)
+                (; gh_spec, uv_spec) = state
+                (; toroidal) = uv_spec
+                toroidal = model.filter(toroidal, toroidal, model.sph)
+                uv_spec = vector_spec(uv_spec.spheroidal, toroidal)
+                state = RSW_state(gh_spec, uv_spec)
+            end
             pv_worker = open(book; model, state) do diags
                 transpose(max.(0.0, diags.potential_vorticity))
             end
