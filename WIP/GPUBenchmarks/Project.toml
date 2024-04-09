@@ -1,0 +1,6 @@
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+LoopManagers = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
+ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
