@@ -1,12 +1,23 @@
 using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, KernelAbstractions_GPU
 using CFTimeSchemes: CFTimeSchemes, advance!
 using MutatingOrNot: void, Void
-using Weno: getrange, stencil6, stencil4, stencil2, diUn!
+using Weno: Weno, getrange, stencil6, stencil4, stencil2, diUn!
 
 using CairoMakie
 using GFlops
 
 include("poisson.jl")
+
+#=============== SIMD stuff =================#
+
+using LoopManagers.SIMD: vifelse, Vec
+function Weno.choose(m::Vec{N,Bool}, iftrue, iffalse) where N
+    all(m) && return iftrue()
+    any(m) || return iffalse()
+    return vifelse(m, iftrue(), iffalse())
+end
+
+#============== end SIMD stuff ==============#
 
 function get_order(msk, step)
     order = similar(msk)
@@ -22,7 +33,7 @@ function get_order(msk, step)
 end
 
 struct Adv{F,M}
-    msk::Matrix{UInt8}
+    msk::Matrix{F}
     U::Matrix{F}
     V::Matrix{F}
     mgr::M   # Loop manager
@@ -116,7 +127,7 @@ function setup(mgr; shape = (262, 262), nh = 3, courant=1.8)
 
     dt = courant / maximum(abs, U)
 
-    model = Adv(msk, U, V, mgr)
+    model = Adv(Float64.(msk), U, V, mgr)
 
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
@@ -143,18 +154,16 @@ end
 @info "Counting ops"
 model, scheme, solver!, state0 = setup(PlainCPU())
 state = deepcopy(state0)
-advance!(state, solver!, state, 0.0, 1) # compile
 ops = @count_ops advance!(state, solver!, state, 0.0, 1)
 ops = GFlops.flop(ops)
 
-# multithreaded
+# multithread
 @info "Measuring performance"
-model, scheme, solver!, state0 = setup(MultiThread())
+model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU()))
 state = deepcopy(state0)
-advance!(state, solver!, state, 0.0, 1) # compile
 gflops = 1e-9 * ops / minimum(1:10) do i
     (@timed advance!(state, solver!, state, 0.0, 1)).time
 end
-@info "Multi-thread performance" gflops
+@info "Multithread + SIMD performance" gflops
 
 state = main(solver!, state0);
