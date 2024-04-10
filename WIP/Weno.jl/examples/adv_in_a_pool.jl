@@ -46,7 +46,7 @@ function CFTimeSchemes.tendencies!(dstate, model::Adv, state, scratch, t)
     return dstate
 end
 
-function setup(mgr; shape = (262, 262), nh = 3)
+function setup(mgr; shape = (262, 262), nh = 3, courant=1.8)
     nx, ny = shape
     #nh = 3
 
@@ -114,8 +114,7 @@ function setup(mgr; shape = (262, 262), nh = 3)
         V[i, j] = (psi[i+1, j] - psi[i, j]) * msk[i, j] * msk[i, j-1]
     end
 
-
-    dt = 1 / maximum(abs, U)
+    dt = courant / maximum(abs, U)
 
     model = Adv(msk, U, V, mgr)
 
@@ -124,7 +123,7 @@ function setup(mgr; shape = (262, 262), nh = 3)
     return model, scheme, solver(true), state0
 end
 
-function main(solver!, state0; niter = 1000)
+function main(solver!, state0; niter = 500)
     state = deepcopy(state0)
     q = Observable(state.trac)
     image(q, aspect_ratio = :equal, colormap = :viridis)
@@ -141,6 +140,7 @@ function main(solver!, state0; niter = 1000)
 end
 
 # count ops ; this is possible only with PlainCPU()
+@info "Counting ops"
 model, scheme, solver!, state0 = setup(PlainCPU())
 state = deepcopy(state0)
 advance!(state, solver!, state, 0.0, 1) # compile
@@ -148,6 +148,7 @@ ops = @count_ops advance!(state, solver!, state, 0.0, 1)
 ops = GFlops.flop(ops)
 
 # multithreaded
+@info "Measuring performance"
 model, scheme, solver!, state0 = setup(MultiThread())
 state = deepcopy(state0)
 advance!(state, solver!, state, 0.0, 1) # compile

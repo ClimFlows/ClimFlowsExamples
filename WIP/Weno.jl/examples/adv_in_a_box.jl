@@ -4,8 +4,8 @@ using CFTimeSchemes: CFTimeSchemes, advance!
 using MutatingOrNot: void, Void
 using Weno: getrange, stencil6, stencil4, stencil2, diUn!
 
-using Plots
-
+using CairoMakie
+using GFlops
 
 function get_order(msk, step)
     order = similar(msk)
@@ -21,33 +21,34 @@ function get_order(msk, step)
 end
 
 
-struct Adv{F}
+struct Adv{F, M}
     msk::Matrix{UInt8}
     U::Matrix{F}
     V::Matrix{F}
+    mgr::M   # Loop manager
 end
 
-function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, mgr)
+function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, _)
     shape = nx, ny = size(msk)
     ox = get_order(msk, 1)
     oy = get_order(msk, nx)
     flux = zeros(shape)
-    return (; mgr, U, V, ox, oy, flux)
+    return (; U, V, ox, oy, flux)
 end
 
 CFTimeSchemes.model_dstate(model::Adv{Float64}, state) =
     (trac = fill!(similar(model.U), 0),)
 
 function CFTimeSchemes.tendencies!(dstate, model::Adv, state, scratch, t)
-    (; msk) = model
-    (; mgr, U, V, ox, oy, flux) = scratch
+    (; mgr, msk) = model
+    (; U, V, ox, oy, flux) = scratch
     fill!(dstate.trac, 0)
     diUn!(mgr, dstate.trac, state.trac, U, V, msk, ox, oy, flux)
     return dstate
 end
 
 
-function setup(shape, mgr, nh = 3)
+function setup(mgr, shape = (262, 262), nh = 3, courant=1.8)
     nx, ny = shape
     #nh = 3
     msk = zeros(UInt8, shape)
@@ -80,26 +81,47 @@ function setup(shape, mgr, nh = 3)
     end
 
 
-    dt = 1.0
+    dt = courant*1.0
 
-    model = Adv(msk, U, V)
+    model = Adv(msk, U, V, mgr)
 
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
-    return model, scheme, solver, state0
+    return model, scheme, solver(true), state0
 end
 
-function main()
-    shape = (262, 262)
-    model, scheme, solv, state0 = setup(shape, PlainCPU())
+function main(solver!, state0; niter = 500)
     state = deepcopy(state0)
-    solver! = solv(true)
+    q = Observable(state.trac)
+    image(q, aspect_ratio = :equal, colormap = :viridis)
+    fig = current_figure()
+    display(fig)
 
-    nite = 100
-    for _ = 1:nite
-        advance!(state, solver!, state, 0.0, 1)
-        heatmap(state.trac) |> display
+    record(current_figure(), "box.mp4", 1:niter) do iter
+        mod(iter, 50) == 0 && @info "Iteration $iter / $niter"
+        advance!(state, solver!, state, 0.0, 5)
+        q[] = state.trac
     end
+    display(fig)
+    return state
 end
 
-main()
+# count ops ; this is possible only with PlainCPU()
+@info "Counting ops"
+model, scheme, solver!, state0 = setup(PlainCPU())
+state = deepcopy(state0)
+advance!(state, solver!, state, 0.0, 1) # compile
+ops = @count_ops advance!(state, solver!, state, 0.0, 1)
+ops = GFlops.flop(ops)
+
+# multithreaded
+@info "Measuring performance"
+model, scheme, solver!, state0 = setup(MultiThread())
+state = deepcopy(state0)
+advance!(state, solver!, state, 0.0, 1) # compile
+gflops = 1e-9 * ops / minimum(1:10) do i
+    (@timed advance!(state, solver!, state, 0.0, 1)).time
+end
+@info "Multi-thread performance" gflops
+
+state = main(solver!, state0);
