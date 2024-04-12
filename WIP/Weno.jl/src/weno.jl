@@ -1,19 +1,17 @@
-using ManagedLoops: @loops, @vec
+using ManagedLoops: @loops, @vec, choose
 
-choose(m::Bool, iftrue, iffalse) = m ? iftrue() : iffalse()
+wen1(qm, qp, U) = @vec if U > 0 qm else qp end
 
-wen1(qm, qp, U) = choose(U > 0, ()->qm, ()->qp)
-
-wen3(qmm, qm, qp, qpp, U) = choose(U > 0, () -> weno3(qmm, qm, qp), ()->weno3(qpp, qp, qm))
+wen3(qmm, qm, qp, qpp, U) = @vec if U > 0 weno3(qmm, qm, qp) else weno3(qpp, qp, qm) end
 
 wen5(qmmm, qmm, qm, qp, qpp, qppp, U) =
-    choose(U > 0, () -> weno5(qmmm, qmm, qm, qp, qpp), () -> weno5(qppp, qpp, qp, qm, qmm))
+    @vec if U > 0 weno5(qmmm, qmm, qm, qp, qpp) else weno5(qppp, qpp, qp, qm, qmm) end
 
 @inline weno_at_point(U, o, qmmm, qmm, qm, qp, qpp, qppp) =
-     choose( o >= 6, () -> wen5(qmmm, qmm, qm, qp, qpp, qppp, U),
-()-> choose( o >= 4, ()-> wen3(qmm, qm, qp, qpp, U),
-()-> choose( o >= 2, ()-> wen1(qm, qp, U), ()->zero(qm)))
-)
+    @vec if o >= 6 wen5(qmmm, qmm, qm, qp, qpp, qppp, U) else
+    @vec if o >= 4 wen3(qmm, qm, qp, qpp, U) else
+    @vec if o >= 2 wen1(qm, qp, U) else
+    zero(qm) end end end
 
 getrange(q, step) = 1+3*step:length(q)-2*step
 

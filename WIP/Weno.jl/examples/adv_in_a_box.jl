@@ -7,17 +7,6 @@ using Weno: Weno, getrange, stencil6, stencil4, stencil2, diUn!
 using CairoMakie
 using GFlops
 
-#=============== SIMD stuff =================#
-
-using LoopManagers.SIMD: vifelse, Vec
-function Weno.choose(m::Vec{N,Bool}, iftrue, iffalse) where N
-    all(m) && return iftrue()
-    any(m) || return iffalse()
-    return vifelse(m, iftrue(), iffalse())
-end
-
-#============== end SIMD stuff ==============#
-
 function get_order(msk, step)
     order = similar(msk)
     fill!(order, 0)
