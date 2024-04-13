@@ -3,8 +3,12 @@ autors = ["The ClimFlows contributors"]
 version = "0.1.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 GFlops = "2ea8233c-34d4-5acc-88b4-02f326385bcc"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 LoopManagers = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
 ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
@@ -12,4 +16,4 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
-LoopManagers = "0.1.1"
+LoopManagers = "0.1.2"

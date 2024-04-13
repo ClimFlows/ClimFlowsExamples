@@ -1,5 +1,6 @@
 # install dependencies
 using Pkg; Pkg.activate(@__DIR__); Pkg.instantiate()
+using InteractiveUtils
 
 using CUDA
 using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda
