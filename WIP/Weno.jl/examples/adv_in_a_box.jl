@@ -1,5 +1,5 @@
 using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, KernelAbstractions_GPU as GPU
-using LoopManagers.ManagedLoops: DeviceManager
+using LoopManagers.ManagedLoops: DeviceManager, synchronize
 
 using CFTimeSchemes: CFTimeSchemes, advance!
 using MutatingOrNot: void, Void
@@ -8,10 +8,10 @@ using Weno: Weno, getrange, stencil6, stencil4, stencil2, diUn!
 using CairoMakie
 using GFlops
 
+# GPU
 using Adapt
 using CUDA: CuArray, CUDABackend
-using KernelAbstractions: synchronize
-using LoopManagers: KernelAbstractions_GPU as GPU
+import KernelAbstractions
 
 function get_order(msk, step)
     order = similar(msk)
@@ -36,10 +36,13 @@ end
 
 Adapt.adapt_structure(to::DeviceManager, adv::Adv) =
     Adv(adapt(to, adv.msk), adapt(to, adv.U), adapt(to, adv.V), to)
+
+#= 
 Adapt.adapt_structure(to::DeviceManager, scheme::CFTimeSchemes.RungeKutta4) =
     CFTimeSchemes.RungeKutta4(adapt(to, scheme.model))
 Adapt.adapt_structure(to::DeviceManager, solver::CFTimeSchemes.IVPSolver) =
     CFTimeSchemes.IVPSolver(solver.dt, adapt(to, solver.scheme), adapt(to, solver.scratch))
+=#
 
 function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, _)
     shape = nx, ny = size(msk)
@@ -142,11 +145,15 @@ end
 gpu = GPU(CUDABackend(), CuArray)
 gpu_state0 = adapt(gpu, state0)
 gpu_solver! = adapt(gpu, solver!)
+
+@info typeof(gpu_state0)
+@info typeof(gpu_solver!)
+
 gpu_state = deepcopy(gpu_state0)
 gflops = 1e-9 * ops / minimum(1:10) do i
     (@timed begin
          advance!(gpu_state, gpu_solver!, gpu_state, 0.0, 1)
-         synchronize(gpu.gpu)
+         synchronize(gpu)
     end).time
 end
 @info "GPU performance" gflops
