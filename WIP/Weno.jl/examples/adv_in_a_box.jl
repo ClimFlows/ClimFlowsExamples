@@ -37,13 +37,6 @@ end
 Adapt.adapt_structure(to::DeviceManager, adv::Adv) =
     Adv(adapt(to, adv.msk), adapt(to, adv.U), adapt(to, adv.V), to)
 
-#= 
-Adapt.adapt_structure(to::DeviceManager, scheme::CFTimeSchemes.RungeKutta4) =
-    CFTimeSchemes.RungeKutta4(adapt(to, scheme.model))
-Adapt.adapt_structure(to::DeviceManager, solver::CFTimeSchemes.IVPSolver) =
-    CFTimeSchemes.IVPSolver(solver.dt, adapt(to, solver.scheme), adapt(to, solver.scratch))
-=#
-
 function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, _)
     shape = nx, ny = size(msk)
     ox = get_order(msk, 1)
@@ -122,9 +115,15 @@ function main(solver!, state0; niter = 500)
     return state
 end
 
+if CUDA.functional()
+    fac=16
+else
+    fac=2
+end
+
 # count ops ; this is possible only with PlainCPU()
 @info "Counting ops"
-n=128
+n = 128
 model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6))
 state = deepcopy(state0)
 ops = @count_ops advance!(state, solver!, state, 0.0, 1)
@@ -132,8 +131,7 @@ ops = GFlops.flop(ops)
 
 
 @info "Measuring performance"
-fac = 16 # increased problem size
-ops = fac*fac*ops 
+ops = fac*fac*ops
 model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(8)) ; shape = (fac*n+6, fac*n+6))
 state = deepcopy(state0)
 advance!(state, solver!, state, 0.0, 1) # compile
@@ -142,22 +140,24 @@ gflops = 1e-9 * ops / minimum(1:10) do i
 end
 @info "Multi-thread + SIMD performance" gflops
 
-gpu = GPU(CUDABackend(), CuArray)
-gpu_state0 = adapt(gpu, state0)
-gpu_solver! = adapt(gpu, solver!)
+if CUDA.functional()
+    gpu = GPU(CUDABackend(), CuArray)
+    gpu_state0 = adapt(gpu, state0)
+    gpu_solver! = adapt(gpu, solver!)
 
-@info typeof(gpu_state0)
-@info typeof(gpu_solver!)
+    @info typeof(gpu_state0)
+    @info typeof(gpu_solver!)
 
-gpu_state = deepcopy(gpu_state0)
-gflops = 1e-9 * ops / minimum(1:10) do i
-    (@timed begin
-         advance!(gpu_state, gpu_solver!, gpu_state, 0.0, 1)
-         synchronize(gpu)
-    end).time
+    gpu_state = deepcopy(gpu_state0)
+    gflops = 1e-9 * ops / minimum(1:10) do i
+        (@timed begin
+             advance!(gpu_state, gpu_solver!, gpu_state, 0.0, 1)
+            synchronize(gpu)
+        end).time
+    end
+    @info "GPU performance" gflops
 end
-@info "GPU performance" gflops
 
 # @profview advance!(state, solver!, state, 0.0, 10)
 
-# @time state = main(solver!, state0);
+@time state = main(solver!, state0);
