@@ -1,17 +1,20 @@
-using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, KernelAbstractions_GPU as GPU
-using LoopManagers.ManagedLoops: DeviceManager, synchronize
+using InteractiveUtils
+@time_imports begin
+    using LoopManagers: SIMD, PlainCPU, VectorizedCPU, MultiThread, KernelAbstractions_GPU as GPU
+    using LoopManagers.ManagedLoops: DeviceManager, synchronize
 
-using CFTimeSchemes: CFTimeSchemes, advance!
-using MutatingOrNot: void, Void
-using Weno: Weno, getrange, stencil6, stencil4, stencil2, diUn!
+    using CFTimeSchemes: CFTimeSchemes, advance!
+    using MutatingOrNot: void, Void
+    using Weno: Weno, getrange, stencil6, stencil4, stencil2, diUn!
 
-using CairoMakie
-using GFlops
+    using CairoMakie
+    using GFlops
 
-# GPU
-using Adapt
-using CUDA: CuArray, CUDABackend
-import KernelAbstractions
+    # GPU
+    using Adapt
+    using CUDA: CUDA, CuArray, CUDABackend
+    import KernelAbstractions
+end
 
 function get_order(msk, step)
     order = similar(msk)
@@ -37,11 +40,12 @@ end
 Adapt.adapt_structure(to::DeviceManager, adv::Adv) =
     Adv(adapt(to, adv.msk), adapt(to, adv.U), adapt(to, adv.V), to)
 
-function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, _)
+function CFTimeSchemes.scratch_space((; msk, U, V)::Adv, u0)
+    F = eltype(u0.trac)
     shape = nx, ny = size(msk)
     ox = get_order(msk, 1)
     oy = get_order(msk, nx)
-    flux = zeros(shape)
+    flux = zeros(F, shape)
     return (; U, V, ox, oy, flux)
 end
 
@@ -56,43 +60,41 @@ function CFTimeSchemes.tendencies!(dstate, model::Adv, state, scratch, t)
     return dstate
 end
 
-
-function setup(mgr; shape = (262, 262), nh = 3, courant=1.8)
+function setup(mgr; shape = (262, 262), nh = 3, courant=1.0, F=Float64)
     nx, ny = shape
     #nh = 3
-    msk = zeros(UInt8, shape)
+    msk = zeros(Int8, shape)
     msk[1+nh:nx-nh, 1+nh:ny-nh] .= 1
 
-    dx = 1.0 / (nx - 2 * nh)
-    dy = 1.0 / (ny - 2 * nh)
+    dx = one(F) / (nx - 2 * nh)
+    dy = one(F) / (ny - 2 * nh)
 
-    alloc() = zeros(shape)
+    alloc() = zeros(F, shape)
 
     state0 = (trac = alloc(),)
 
     for j = 1:ny, i = 1:nx
-        x = (i - nh - 0.5) * dx
-        y = (j - nh - 0.5) * dy
+        x = F(i - nh - 0.5) * dx
+        y = F(j - nh - 0.5) * dy
         state0.trac[i, j] =
             msk[i, j] * (mod(floor(x / (16 * dx)), 2) + mod(floor(y / (16 * dy)), 2) - 1)
     end
 
     U, V = alloc(), alloc()
     for j = 1:ny, i = 2:nx
-        x = pi * (i - nh - 1) * dx
-        y = pi * (j - nh - 0.5) * dy
-        U[i, j] = -sin(x) * cos(y) * msk[i-1, j] * msk[i, j]
+        x = pi * F(i - nh - 1) * dx
+        y = pi * F(j - nh - 0.5) * dy
+        U[i, j] = -(msk[i-1, j] * msk[i, j])*(sin(x) * cos(y))
     end
     for j = 2:ny, i = 1:nx
-        x = pi * (i - nh - 0.5) * dx
-        y = pi * (j - nh - 1) * dy
-        V[i, j] = cos(x) * sin(y) * msk[i, j] * msk[i, j-1]
+        x = pi * F(i - nh - 0.5) * dx
+        y = pi * F(j - nh - 1) * dy
+        V[i, j] = (msk[i, j] * msk[i, j-1])*(cos(x) * sin(y))
     end
 
+    dt = F(courant)
 
-    dt = courant*1.0
-
-    model = Adv(Float64.(msk), U, V, mgr)
+    model = Adv(F.(msk), U, V, mgr)
 
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt ; u0=state0, mutating)
@@ -100,6 +102,7 @@ function setup(mgr; shape = (262, 262), nh = 3, courant=1.8)
 end
 
 function main(solver!, state0; niter = 500)
+    F = eltype(state0.trac)
     state = deepcopy(state0)
     q = Observable(state.trac)
     image(q, aspect_ratio = :equal, colormap = :viridis)
@@ -108,7 +111,7 @@ function main(solver!, state0; niter = 500)
 
     record(current_figure(), "box.mp4", 1:niter) do iter
         mod(iter, 50) == 0 && @info "Iteration $iter / $niter"
-        advance!(state, solver!, state, 0.0, 5)
+        advance!(state, solver!, state, zero(F), 5)
         q[] = state.trac
     end
     display(fig)
@@ -123,22 +126,22 @@ end
 
 # count ops ; this is possible only with PlainCPU()
 @info "Counting ops"
-n = 128
-model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6))
+F, n = Float64, 128
+model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
 state = deepcopy(state0)
-ops = @count_ops advance!(state, solver!, state, 0.0, 1)
+ops = @count_ops advance!(state, solver!, state, zero(F), 1)
 ops = GFlops.flop(ops)
 
 
-@info "Measuring performance"
 ops = fac*fac*ops
-model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(8)) ; shape = (fac*n+6, fac*n+6))
+model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(16)) ; shape = (fac*n+6, fac*n+6), F)
 state = deepcopy(state0)
-advance!(state, solver!, state, 0.0, 1) # compile
+@info "Measuring performance" model.mgr
+advance!(state, solver!, state, zero(F), 1) # compile
 gflops = 1e-9 * ops / minimum(1:10) do i
-    (@timed advance!(state, solver!, state, 0.0, 1)).time
+    (@timed advance!(state, solver!, state, zero(F), 1)).time
 end
-@info "Multi-thread + SIMD performance" gflops
+@info "Multi-thread + SIMD performance + $F" gflops
 
 if CUDA.functional()
     gpu = GPU(CUDABackend(), CuArray)
@@ -160,4 +163,4 @@ end
 
 # @profview advance!(state, solver!, state, 0.0, 10)
 
-@time state = main(solver!, state0);
+@time state = main(solver!, state0 ; niter=100);
