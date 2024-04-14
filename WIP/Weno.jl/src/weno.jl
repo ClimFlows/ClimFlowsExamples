@@ -22,9 +22,7 @@ getrange(q, step) = 1+3*step:length(q)-2*step
 
 @inline stencil2(q, i, step) = (q[i-step], q[i])
 
-function weno3(qm, q0, qp)
-    eps = 1e-14
-
+function weno3(qm::F, q0::F, qp::F) where F
     qi1 = -qm / 2 + 3 * q0 / 2
     qi2 = (q0 + qp) / 2
 
@@ -32,15 +30,15 @@ function weno3(qm, q0, qp)
     beta2 = (qp - q0)^2
     tau = abs(beta2 - beta1)
 
-    g1, g2 = 1/3, 2/3
-    w1 = g1 * (1 + tau / (beta1 + eps))
-    w2 = g2 * (1 + tau / (beta2 + eps))
+    g1, g2 = F(1)/F(3), F(2)/F(3)
+    w1 = g1 * (1 + tau / (beta1 + eps(F)))
+    w2 = g2 * (1 + tau / (beta2 + eps(F)))
 
     return (w1 * qi1 + w2 * qi2) / (w1 + w2)
 end
 
 
-function weno5(qmm, qm, q0, qp, qpp)
+function weno5(qmm::F, qm::F, q0::F, qp::F, qpp::F) where F
     """
     5-points non-linear left-biased stencil reconstruction
 
@@ -49,24 +47,22 @@ function weno5(qmm, qm, q0, qp, qpp)
     An improved weighted essentially non-oscillatory scheme for hyperbolic
     conservation laws, Borges et al, Journal of Computational Physics 227 (2008)
     """
-    eps = 1e-16
-
     # factor 6 missing here
     qi1 = 2 * qmm - 7 * qm + 11 * q0
     qi2 = -qm + 5 * q0 + 2 * qp
     qi3 = 2 * q0 + 5 * qp - qpp
 
-    k1, k2 = 13.0 / 12, 0.25
+    k1, k2 = F(13)/F(12), F(0.25)
     beta1 = k1 * (qmm - 2 * qm + q0)^2 + k2 * (qmm - 4 * qm + 3 * q0)^2
     beta2 = k1 * (qm - 2 * q0 + qp)^2 + k2 * (qm - qp)^2
     beta3 = k1 * (q0 - 2 * qp + qpp)^2 + k2 * (3 * q0 - 4 * qp + qpp)^2
 
     tau5 = abs(beta1 - beta3)
 
-    g1, g2, g3 = 0.1, 0.6, 0.3
-    w1 = g1 * (1 + tau5 / (beta1 + eps))
-    w2 = g2 * (1 + tau5 / (beta2 + eps))
-    w3 = g3 * (1 + tau5 / (beta3 + eps))
+    g1, g2, g3 = F(0.1), F(0.6), F(0.3)
+    w1 = g1 * (1 + tau5 / (beta1 + eps(F)))
+    w2 = g2 * (1 + tau5 / (beta2 + eps(F)))
+    w3 = g3 * (1 + tau5 / (beta3 + eps(F)))
 
     # factor 6 is hidden below
     return (w1 * qi1 + w2 * qi2 + w3 * qi3) / (6 * (w1 + w2 + w3))

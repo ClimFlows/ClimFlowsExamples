@@ -16,4 +16,5 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
-LoopManagers = "0.1.2"
+CFTimeSchemes = "0.2"
+ManagedLoops = "0.1.3"
