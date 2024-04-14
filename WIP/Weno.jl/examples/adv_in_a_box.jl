@@ -77,19 +77,19 @@ function setup(mgr; shape = (262, 262), nh = 3, courant=1.0, F=Float64)
         x = F(i - nh - 0.5) * dx
         y = F(j - nh - 0.5) * dy
         state0.trac[i, j] =
-            msk[i, j] * (mod(floor(x / (16 * dx)), 2) + mod(floor(y / (16 * dy)), 2) - 1)
+            F(msk[i, j]) * (mod(floor(x / (16 * dx)), 2) + mod(floor(y / (16 * dy)), 2) - 1)
     end
 
     U, V = alloc(), alloc()
     for j = 1:ny, i = 2:nx
         x = pi * F(i - nh - 1) * dx
         y = pi * F(j - nh - 0.5) * dy
-        U[i, j] = -(msk[i-1, j] * msk[i, j])*(sin(x) * cos(y))
+        U[i, j] = -F(msk[i-1, j] * msk[i, j])*(sin(x) * cos(y))
     end
     for j = 2:ny, i = 1:nx
         x = pi * F(i - nh - 0.5) * dx
         y = pi * F(j - nh - 1) * dy
-        V[i, j] = (msk[i, j] * msk[i, j-1])*(cos(x) * sin(y))
+        V[i, j] = F(msk[i, j] * msk[i, j-1])*(cos(x) * sin(y))
     end
 
     dt = F(courant)
@@ -118,32 +118,45 @@ function main(solver!, state0; niter = 500)
     return state
 end
 
+# should be implemented by SIMD.jl
+Base.eps(::Type{SIMD.Vec{N,F}}) where {N, F} = eps(F)
+
 if CUDA.functional()
     fac=16
 else
-    fac=2
+    fac=4
 end
 
 # count ops ; this is possible only with PlainCPU()
-@info "Counting ops"
-F, n = Float64, 128
-model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
-state = deepcopy(state0)
-ops = @count_ops advance!(state, solver!, state, zero(F), 1)
-ops = GFlops.flop(ops)
-
-
-ops = fac*fac*ops
-model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(16)) ; shape = (fac*n+6, fac*n+6), F)
-state = deepcopy(state0)
-@info "Measuring performance" model.mgr
-advance!(state, solver!, state, zero(F), 1) # compile
-gflops = 1e-9 * ops / minimum(1:10) do i
-    (@timed advance!(state, solver!, state, zero(F), 1)).time
+@info "Counting ops..."
+ops_per_point = let (F, n) = (Float32, 128)
+    model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
+    state = deepcopy(state0)
+    ops = @count_ops advance!(state, solver!, state, zero(F), 1)
+    display(ops)
+    GFlops.flop(ops)/length(state.trac)
 end
-@info "Multi-thread + SIMD performance + $F" gflops
+@info "..." ops_per_point
+
+@info "Measuring performance"
+n = fac*128
+for mgr in (PlainCPU(), MultiThread(VectorizedCPU(16)))
+    for F in (Float64, Float32)
+        model, scheme, solver!, state0 = setup(mgr ; shape = (n+6, n+6), F)
+        state = deepcopy(state0)
+        elapsed = minimum(1:10) do i
+            (@timed advance!(state, solver!, state, zero(F), 1)).time
+        end
+        gflops = 1e-9 * length(state.trac)*ops_per_point / elapsed
+        elapsed_per_point = "$(1e9*elapsed/length(state.trac)) ns"
+        @info "$F performance" mgr gflops elapsed_per_point
+    end
+end
 
 if CUDA.functional()
+    # setup on CPU
+    model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
+    # transfer to GPU
     gpu = GPU(CUDABackend(), CuArray)
     gpu_state0 = adapt(gpu, state0)
     gpu_solver! = adapt(gpu, solver!)
@@ -152,15 +165,20 @@ if CUDA.functional()
     @info typeof(gpu_solver!)
 
     gpu_state = deepcopy(gpu_state0)
-    gflops = 1e-9 * ops / minimum(1:10) do i
+    elapsed = minimum(1:10) do i
         (@timed begin
              advance!(gpu_state, gpu_solver!, gpu_state, 0.0, 1)
             synchronize(gpu)
         end).time
     end
-    @info "GPU performance" gflops
+    gflops = 1e-9 * length(state.trac)*ops_per_point / elapsed
+    elapsed_per_point = "$(1e9*elapsed/length(state.trac)) ns"
+    @info "GPU performance" gflops elapsed_per_point
+
+else
+    n=fac*128
+    model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(16)) ; shape = (n+6, n+6), F=Float32)
+    @time state = main(solver!, state0 ; niter=100);
 end
 
-# @profview advance!(state, solver!, state, 0.0, 10)
-
-@time state = main(solver!, state0 ; niter=100);
+@profview advance!(state, solver!, state, 0.0, 10)
