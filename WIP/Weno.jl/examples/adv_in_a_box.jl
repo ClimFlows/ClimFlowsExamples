@@ -121,12 +121,6 @@ end
 # should be implemented by SIMD.jl
 Base.eps(::Type{SIMD.Vec{N,F}}) where {N, F} = eps(F)
 
-if CUDA.functional()
-    fac=16
-else
-    fac=4
-end
-
 # count ops ; this is possible only with PlainCPU()
 @info "Counting ops..."
 ops_per_point = let (F, n) = (Float32, 128)
@@ -139,6 +133,7 @@ end
 @info "..." ops_per_point
 
 @info "Measuring performance"
+fac=4
 n = fac*128
 for mgr in (PlainCPU(), MultiThread(VectorizedCPU(16)))
     for F in (Float64, Float32)
@@ -154,31 +149,34 @@ for mgr in (PlainCPU(), MultiThread(VectorizedCPU(16)))
 end
 
 if CUDA.functional()
-    # setup on CPU
-    model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
-    # transfer to GPU
-    gpu = GPU(CUDABackend(), CuArray)
-    gpu_state0 = adapt(gpu, state0)
-    gpu_solver! = adapt(gpu, solver!)
+    fac=16
+    n = fac*128
+    for F in (Float64, Float32)
+        # setup on CPU
+        model, scheme, solver!, state0 = setup(PlainCPU() ; shape = (n+6, n+6), F)
+        # transfer to GPU
+        gpu = GPU(CUDABackend(), CuArray)
+        state0 = adapt(gpu, state0)
+        solver! = adapt(gpu, solver!)
 
-    @info typeof(gpu_state0)
-    @info typeof(gpu_solver!)
+        @info typeof(state0)
+        @info typeof(solver!)
 
-    gpu_state = deepcopy(gpu_state0)
-    elapsed = minimum(1:10) do i
-        (@timed begin
-             advance!(gpu_state, gpu_solver!, gpu_state, 0.0, 1)
-            synchronize(gpu)
-        end).time
+        state = deepcopy(state0)
+        elapsed = minimum(1:10) do i
+            (@timed begin
+                 advance!(state, solver!, state, zero(F), 1)
+                 synchronize(gpu)
+             end).time
+        end
+        gflops = 1e-9 * length(state.trac)*ops_per_point / elapsed
+        elapsed_per_point = "$(1e9*elapsed/length(state.trac)) ns"
+        @info "GPU performance" F gflops elapsed_per_point
     end
-    gflops = 1e-9 * length(state.trac)*ops_per_point / elapsed
-    elapsed_per_point = "$(1e9*elapsed/length(state.trac)) ns"
-    @info "GPU performance" gflops elapsed_per_point
-
 else
     n=fac*128
     model, scheme, solver!, state0 = setup(MultiThread(VectorizedCPU(16)) ; shape = (n+6, n+6), F=Float32)
     @time state = main(solver!, state0 ; niter=100);
+    # @profview advance!(state, solver!, state, 0.0, 10)
 end
 
-@profview advance!(state, solver!, state, 0.0, 10)
