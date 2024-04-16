@@ -47,7 +47,7 @@ end
 
 function mysolve!(msk, A, b, x)
     rhs = b[msk.>0]
-    problem = LinearProblem(A, rhs)
+    problem = LinearProblem(A, Float64.(rhs))
     solve(problem)
     x[msk.>0] = solve(problem)
 end
