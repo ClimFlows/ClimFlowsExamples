@@ -31,6 +31,7 @@ export dotprod_cvector, allocate_field, allocate_fields # allocate_cvector, allo
 export sample_scalar, sample_scalar!, sample_cvector, sample_cvector!
 export vectorfield, vectorfield!, cvectorfield, cvectorfield!
 
+@inline allocate_fields(syms::NamedTuple, domain::AbstractDomain, F::Type) = map(sym->allocate_field(Val(sym), domain, F), syms)
 @inline allocate_fields(syms::Tuple, domain::AbstractDomain, F::Type) = Tuple( allocate_field(Val(sym), domain, F) for sym in syms )
 @inline allocate_fields(syms::Tuple, domain::AbstractDomain, F::Type, backend) = Tuple( allocate_field(Val(sym), domain, F, backend) for sym in syms )
 @inline allocate_field(sym::Symbol, domain::AbstractDomain, F::Type) = allocate_field(Val(sym), domain, F)

@@ -1,8 +1,10 @@
 module CFShallowWaters
 
-using CFDomains: VoronoiSphere
-using GFPlanets: ConformalPlanet
+import CFTimeSchemes: scratch_space
+using CFDomains: VoronoiSphere, allocate_fields, allocate_field
+using GFPlanets: ShallowTradPlanet, coriolis, scale_factor
 using ManagedLoops: @loops, @unroll
+using CookBooks
 
 #=
 using GFModels, GFPlanets, GFDomains, GFLoops, GFRegistries
@@ -24,10 +26,12 @@ end
 
 abstract type AbstractSW end
 
-#=
 
-Models.allocate_scratch(model::AbstractSW) =
-    allocate_SW_scratch(model.domain, eltype(model.domain))
+scratch_space(model::AbstractSW, u0) = allocate_SW_scratch(model.domain, u0)
+
+allocate_SW_scratch(domain::VoronoiSphere, u0) =
+    allocate_fields((qv=:dual, qe=:vector, U=:vector, B=:scalar), domain, eltype(u0.ghcov))
+#=
 Models.allocate_state(model::AbstractSW) =
     allocate_SW_state(model.domain, eltype(model.domain))
 Models.backend(::AbstractSW) = GFLoops.default_backend()
@@ -38,8 +42,8 @@ allocate_SW_scratch(domain::SpectralDomain) =
 
 allocate_SW_state(domain::VoronoiSphere, F::Type{<:Real}) =
     allocate_fields((:vector, :scalar), domain, F)
-allocate_SW_scratch(domain::VoronoiSphere, F::Type{<:Real}) =
-    allocate_fields((:dual, :vector, :vector, :scalar), domain, F) # qv, qe, U, B
+
+=#
 
 struct Traditional_RSW{Planet,Domain,Fcov} <: AbstractSW
     planet::Planet
@@ -61,13 +65,15 @@ struct Oblate_RSW{Planet,Domain,RLambda,RPhi} <: AbstractSW
 end
 
 RSW(planet::ShallowTradPlanet, domain) = Traditional_RSW(planet, domain)
+
+#=
 coriolis_cov(F, planet, domain::SpectralDomain) = F.(coriolis(planet, domain.lat))
-coriolis_cov(F, planet::ConformalPlanet, domain::VoronoiSphere) =
-    coriolis_voronoi(F, planet, domain.lat_v, domain.Av)
 coriolis_voronoi(F, planet, lat_v::W, Av::W) where {W<:WrappedArray} =
     wrap_array(coriolis_voronoi(F, planet, lat_v.data, Av.data), lat_v)
-coriolis_voronoi(F, planet, lat_v, Av) = F.(coriolis(planet, lat_v) .* Av)
 =#
+coriolis_cov(F, planet, domain::VoronoiSphere) =
+    coriolis_voronoi(F, planet, domain.lat_v, domain.Av)
+coriolis_voronoi(F, planet, lat_v, Av) = F.(coriolis(planet, lat_v) .* Av)
 
 include("initialize.jl")
 include("tendencies.jl")

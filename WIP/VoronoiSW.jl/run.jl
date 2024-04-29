@@ -11,17 +11,12 @@ unique!(push!(LOAD_PATH, "$(@__DIR__)/modules"))
 # include("preamble.jl")
 
 @time_imports begin
-#    import GFDomains
+    import CFDomains
     import ClimFlowsTestCases as CFTestCases
     import CFTimeSchemes
     import GFPlanets
-#    import GFShallowWaters
-#    import GFExperiments
-#    import GFModels
-
-#    using Filters: HyperDiffusion, filter!
-
-#    using CairoMakie
+    import CFShallowWaters
+    using Filters: HyperDiffusion, filter!
 end
 
 include("voronoi_mesh.jl")
@@ -68,45 +63,29 @@ function setup_RSW(
     (; R0, Omega, gH0) = testcase.params
 
     ## numerical parameters
-    @time dx = R0 * GFDomains.laplace_dx(sphere)
+    @time dx = R0 * CFDomains.laplace_dx(sphere)
     @info "Effective mesh size dx = $(round(dx/1e3)) km"
     dt_dyn = courant * dx / sqrt(gH0)
     @info "Theoretical time step = $(round(dt_dyn)) s"
 
     ## model setup
     planet = GFPlanets.ShallowTradPlanet(R0, Omega)
-    model = GFShallowWaters.RSW(planet, sphere)
+    model = CFShallowWaters.RSW(planet, sphere)
     dissip = HyperDiffusion(sphere, niter_gradrot, nu_gradrot, :vector_curl)
 
     ## initial condition & standard diagnostics
-    state = GFModels.initialize(model, CFTestCases.initial_flow, testcase)
-    scratch = GFModels.allocate_scratch(model)
-    diags = GFModels.diagnostics(
-        model;
-        domain = sphere,
-        planet = planet,
-        state = state,
-        scratch = scratch,
-    )
-
-    myscheme(model, dt) = MyScheme(Scheme, model, dissip, nstep, dt) # here dt is the macro step dt_dyn*nstep
-    loop = GFExperiments.timeloop(
-        periods,
-        hours_per_period * 3600.0,
-        model,
-        myscheme,
-        dt_dyn*nstep,
-        state,
-    )
-
-    return diags, loop
+    state = CFShallowWaters.initialize_SW(sphere, model, CFTestCases.initial_flow, testcase)
+    @info typeof(state)
+    diags = CFShallowWaters.diagnostics(model)
+    @info diags
+    scratch = CFTimeSchemes.scratch_space(model, state)
+    diags = CFShallowWaters.diagnostics(model)
+    return model, state, diags, MyScheme(Scheme(model), nothing, nstep)
 end
 
-# ## Movies
-
-# include("voronoi.jl")
-
-diagnose_pv(diags) = (GFDomains.primal_from_dual(diags.pv, diags.domain), "PV")
+diagnose_pv(diags, state) = open(diags ; state) do session
+    CFDomains.primal_from_dual(max.(0,session.pv), session.domain)
+end
 
 # ## Main program
 
@@ -114,6 +93,12 @@ diagnose_pv(diags) = (GFDomains.primal_from_dual(diags.pv, diags.domain), "PV")
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-16
 sphere = read_mesh(meshname; Float = Float32)
 
-diags, loop = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 2.0);
-@time run_movie_3D(sphere, diags, diagnose_pv, loop, "VoronoiSW_3D.mp4")
+model, state, diags, scheme = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 2.0);
+diags.model = ()->model
+diags.domain = model->model.domain
+diags.planet = model->model.planet
+
+fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV")
+
+# @time run_movie_3D(sphere, diags, diagnose_pv, loop, "VoronoiSW_3D.mp4")
 ## @time run_movie_2D(sphere, diags, diagnose_pv, loop, "VoronoiSW_2D.mp4")
