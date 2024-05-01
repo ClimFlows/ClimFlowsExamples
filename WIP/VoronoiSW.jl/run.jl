@@ -17,6 +17,7 @@ unique!(push!(LOAD_PATH, "$(@__DIR__)/modules"))
     import GFPlanets
     import CFShallowWaters
     using Filters: HyperDiffusion, filter!
+    using MutatingOrNot: void
 end
 
 include("voronoi_mesh.jl")
@@ -27,20 +28,27 @@ struct MyScheme{Dyn,Dissip}
     dissip::Dissip
     nstep::Int
 end
+
 MyScheme(Scheme, model, dissip, nstep, dt) =
     MyScheme(Scheme(model, dt / nstep), dissip, nstep)
 
-CFTimeSchemes.advance!(state, scheme::MyScheme, scratch, backend) =
-    advance_MyScheme!(state, scheme, scratch, backend)
+Base.show(io::IO, scheme::MyScheme{Dyn, Dissip}) where {Dyn, Dissip} = print(io,
+    "MyScheme\n",
+    "  dynamics::$Dyn\n",
+    "  dissip::$Dissip\n",
+    "  nstep = $(scheme.nstep)\n")
 
-function advance_MyScheme!(state, scheme, scratch, backend)
+CFTimeSchemes.advance!(future, scheme::MyScheme, state, t, dt, scratch) =
+    advance_MyScheme!(future, scheme, state, t, dt, scratch)
+
+function advance_MyScheme!(future, scheme, state, t, dt, scratch)
     (; dynamics, dissip, nstep) = scheme
-    for _ = 1:nstep
-        GFTimeSchemes.advance!(state, dynamics, scratch, backend)
-    end
+#    for _ = 1:nstep
+        future = CFTimeSchemes.advance!(future, dynamics, state, t, dt, scratch)
+#    end
     ## dissipation
-    ucov, _ = state
-    filter!(dissip, backend, ucov, dynamics.dt * nstep)
+#    (; ucov) = state
+#    filter!(dissip, backend, ucov, dynamics.dt * nstep)
 end
 
 # ## Setup simulation
@@ -83,6 +91,9 @@ function setup_RSW(
     return model, state, diags, MyScheme(Scheme(model), nothing, nstep)
 end
 
+using CookBooks
+(book::CookBooks.CookBook)(; kwargs...) = open(book ; kwargs...)
+
 diagnose_pv(diags, state) = open(diags ; state) do session
     CFDomains.primal_from_dual(max.(0,session.pv), session.domain)
 end
@@ -91,14 +102,15 @@ end
 
 ## meshname, nu_gradrot = "uni.2deg.mesh.nc", 1e-15
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-16
-sphere = read_mesh(meshname; Float = Float32)
+Float = Float32
+sphere = read_mesh(meshname; Float)
 
 model, state, diags, scheme = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 2.0);
-diags.model = ()->model
-diags.domain = model->model.domain
-diags.planet = model->model.planet
+fig, dgh = plot_voronoi_3D(sphere, diags(; state).dgh, "dgh/dt"; zoom=1)
+display(fig)
+fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV"; zoom=1)
+display(fig)
 
-fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV")
-
+future = CFTimeSchemes.advance!(void, scheme, state, zero(Float), zero(Float), void)
 # @time run_movie_3D(sphere, diags, diagnose_pv, loop, "VoronoiSW_3D.mp4")
 ## @time run_movie_2D(sphere, diags, diagnose_pv, loop, "VoronoiSW_2D.mp4")

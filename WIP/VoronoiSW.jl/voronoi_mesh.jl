@@ -168,7 +168,7 @@ function run_movie_3D(sphere, diags, diagnose, loop, moviename, zoom = 1.6)
     return
 end
 
-function plot_voronoi_3D(sphere, color, title, zoom = 1.6)
+function plot_voronoi_3D(sphere, color, title ; zoom = 1.6)
     makiemesh = let (lon, lat, vertex) = (sphere.lon_i, sphere.lat_i, sphere.dual_vertex)
         xyz(lon, lat) = cos(lat) * cos(lon), cos(lat) * sin(lon), sin(lat)
         nodes = [GB.Point3f(xyz(lon[i], lat[i])) for i in eachindex(lon)]

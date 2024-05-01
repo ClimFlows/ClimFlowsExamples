@@ -5,29 +5,51 @@ macro fields(expr)
     return esc(Expr(:block, lines... ))
 end
 
-struct VoronoiSphere{VI,MI,VR,MR,AR} <: UnstructuredDomain
+struct VoronoiSphere{F,
+    VI<:AbstractVector{Int32},  # Vectors of integers
+    MI<:AbstractMatrix{Int32},  # Matrices of integers
+    VR<:AbstractVector{F},      # Vectors of reals
+    MR<:AbstractMatrix{F},      # Matrices of reals
+    AR<:AbstractArray{F}       # 3D array of reals
+    } <: UnstructuredDomain
     @fields ( primal_num, dual_num, edge_num ) :: Int32
-    # Vectors of integers
     @fields ( primal_deg, dual_deg, trisk_deg ) :: VI
-    # Matrices of integers
     @fields ( primal_edge, primal_vertex, dual_edge, dual_vertex ) :: MI
     @fields ( edge_left_right, edge_down_up, trisk ) :: MI
     @fields ( primal_ne, dual_ne ) :: MI
-    # Vectors of reals
     @fields ( Ai, lon_i, lat_i, Av, lon_v, lat_v) :: VR
     @fields ( le, de, le_de, lon_e, lat_e, angle_e)    :: VR
-    # Matrices of reals
     @fields ( primal_bounds_lon, primal_bounds_lat, dual_bounds_lon, dual_bounds_lat ) :: MR
     @fields ( Riv2, wee ) :: MR
-    # 3D array of reals
     primal_perot_cov :: AR
 end
 const VSph = VoronoiSphere
+
+Base.show(io::IO, ::Type{<:VoronoiSphere{F}}) where F = print(io,
+    "VoronoiSphere{$F}")
+Base.show(io::IO, sphere::VoronoiSphere) = print(io,
+    "VoronoiSphere($(length(sphere.Ai)) cells, $(length(sphere.Av)) dual cells)")
 
 # converts Floats to Float, leaves other types alone
 @inline convert_float(data, T) = data
 @inline convert_float(data::Integer, T) = data
 @inline convert_float(data::AbstractFloat, T) = T(data)
+
+function VoronoiSphere(read_data::Function ; prec=Float32)
+    names = fieldnames(VoronoiSphere)
+    data = Dict( name => convert_float.(read_data(name), prec) for name in names)
+    nums = (:primal_num, :dual_num, :edge_num)
+    for name in nums
+        data[name] = Int32(data[name])
+    end
+    nums = Tuple( data[name] for name in nums )
+    return VoronoiSphere((crop(nums, data[name], name) for name in names)...)
+end
+
+@inline Base.eltype(dom::VSph) = eltype(dom.Ai)
+
+@inline primal(dom::VSph) = SubMesh{:scalar, typeof(dom)}(dom)
+@inline interior(::Val{:scalar}, dom::VSph) = eachindex(dom.Ai)
 
 function crop((primal_num, dual_num, edge_num), data, name::Symbol)
     if name in (:primal_deg, :primal_edge, :primal_vertex, :primal_ne,
@@ -50,22 +72,6 @@ function crop((primal_num, dual_num, edge_num), data, name::Symbol)
         return data[:,1:num]
     end
 end
-
-function VoronoiSphere(read_data::Function ; prec=Float32)
-    names = fieldnames(VoronoiSphere)
-    data = Dict( name => convert_float.(read_data(name), prec) for name in names)
-    nums = (:primal_num, :dual_num, :edge_num)
-    for name in nums
-        data[name] = Int32(data[name])
-    end
-    nums = Tuple( data[name] for name in nums )
-    return VoronoiSphere((crop(nums, data[name], name) for name in names)...)
-end
-
-@inline Base.eltype(dom::VSph) = eltype(dom.Ai)
-
-@inline primal(dom::VSph) = SubMesh{:scalar, typeof(dom)}(dom)
-@inline interior(::Val{:scalar}, dom::VSph) = eachindex(dom.Ai)
 
 #====================== Allocate ======================#
 

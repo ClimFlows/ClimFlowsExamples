@@ -78,20 +78,17 @@ end
 
 #== Generic ==#
 
-function diag_dstate(domain, planet, model, state, scratch)
-    dstate  = Models.allocate_state(model)
-    Models.tendencies!(dstate, state, scratch, model)
-    return dstate
-end
-
 diagnostics(model::AbstractSW ; kwargs...) = CookBook(;
-    pv = diag_pv_voronoi,
+    model   = ()->model,
+    dstate  = (model, state) -> tendencies_SW(state, model, model.domain),
+    domain  = model->model.domain,
+    planet  = model->model.planet,
+    pv      = diag_pv_voronoi,
     ulonlat = diag_ulonlat,
     KE      = diag_KE,
     gh      = diag_gh,
     divu    = diag_divu,
     curlu   = diag_curlu,
-    dstate  = diag_dstate,
     dgh     = (domain, planet, model, dstate) -> diag_gh(domain, planet, model, dstate),
     ddivu   = (domain, planet, model, dstate) -> diag_divu(domain, planet, model, dstate),
     dcurlu  = (domain, planet, model, dstate) -> diag_curlu(domain, planet, model, dstate),

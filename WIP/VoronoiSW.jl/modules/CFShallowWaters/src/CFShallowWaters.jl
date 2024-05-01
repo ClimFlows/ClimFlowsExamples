@@ -1,10 +1,11 @@
 module CFShallowWaters
 
-import CFTimeSchemes: scratch_space
+import CFTimeSchemes: scratch_space, tendencies!
 using CFDomains: VoronoiSphere, allocate_fields, allocate_field
 using GFPlanets: ShallowTradPlanet, coriolis, scale_factor
 using ManagedLoops: @loops, @unroll
 using CookBooks
+using MutatingOrNot: void, Void
 
 #=
 using GFModels, GFPlanets, GFDomains, GFLoops, GFRegistries
@@ -18,7 +19,8 @@ import GFPlanets as Planets
 =#
 
 macro fast(code)
-    debug = haskey(ENV, "GF_DEBUG") && (ENV["GF_DEBUG"] != "")
+#    debug = haskey(ENV, "GF_DEBUG") && (ENV["GF_DEBUG"] != "")
+    debug = true
     return debug ? esc(code) : esc(quote
         @inbounds $code
     end)
@@ -56,6 +58,12 @@ struct Traditional_RSW{Planet,Domain,Fcov} <: AbstractSW
     end
 end
 
+Base.show(io::IO, ::Type{<:Traditional_RSW{Planet, Domain}}) where {Planet, Domain} = print(io,
+    "Traditional_RSW{$Planet, $Domain}")
+
+Base.show(io::IO, trad::Traditional_RSW{Planet}) where {Planet} = print(io,
+    "Traditional_RSW(planet=$(trad.planet), domain=$(trad.domain)")
+
 struct Oblate_RSW{Planet,Domain,RLambda,RPhi} <: AbstractSW
     planet::Planet
     domain::Domain
@@ -65,6 +73,7 @@ struct Oblate_RSW{Planet,Domain,RLambda,RPhi} <: AbstractSW
 end
 
 RSW(planet::ShallowTradPlanet, domain) = Traditional_RSW(planet, domain)
+tendencies!(::Void, model::Traditional_RSW, state, _, _) = tendencies_SW(state, model, model.domain)
 
 #=
 coriolis_cov(F, planet, domain::SpectralDomain) = F.(coriolis(planet, domain.lat))
