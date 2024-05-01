@@ -73,7 +73,7 @@ function setup_RSW(
     ## numerical parameters
     @time dx = R0 * CFDomains.laplace_dx(sphere)
     @info "Effective mesh size dx = $(round(dx/1e3)) km"
-    dt_dyn = courant * dx / sqrt(gH0)
+    dt_dyn = Float(courant * dx / sqrt(gH0))
     @info "Theoretical time step = $(round(dt_dyn)) s"
 
     ## model setup
@@ -83,12 +83,12 @@ function setup_RSW(
 
     ## initial condition & standard diagnostics
     state = CFShallowWaters.initialize_SW(sphere, model, CFTestCases.initial_flow, testcase)
-    @info typeof(state)
     diags = CFShallowWaters.diagnostics(model)
     @info diags
     scratch = CFTimeSchemes.scratch_space(model, state)
     diags = CFShallowWaters.diagnostics(model)
-    return model, state, diags, MyScheme(Scheme(model), nothing, nstep)
+#    return model, state, dt_dyn, MyScheme(Scheme(model), nothing, nstep), diags
+    return model, diags, state, Scheme(model), dt_dyn
 end
 
 using CookBooks
@@ -105,12 +105,17 @@ meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-16
 Float = Float32
 sphere = read_mesh(meshname; Float)
 
-model, state, diags, scheme = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 2.0);
-fig, dgh = plot_voronoi_3D(sphere, diags(; state).dgh, "dgh/dt"; zoom=1)
-display(fig)
+model, diags, state, scheme, dt = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 1.5);
 fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV"; zoom=1)
 display(fig)
 
-future = CFTimeSchemes.advance!(void, scheme, state, zero(Float), zero(Float), void)
+let future = state
+    @time for _ = 1:1000
+        future = CFTimeSchemes.advance!(void, scheme, future, zero(Float), dt, void)
+    end
+    pv[] = diagnose_pv(diags, future)
+    display(fig)
+end
+
 # @time run_movie_3D(sphere, diags, diagnose_pv, loop, "VoronoiSW_3D.mp4")
 ## @time run_movie_2D(sphere, diags, diagnose_pv, loop, "VoronoiSW_2D.mp4")
