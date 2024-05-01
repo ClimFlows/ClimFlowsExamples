@@ -82,11 +82,10 @@ function setup_RSW(
     dissip = HyperDiffusion(sphere, niter_gradrot, nu_gradrot, :vector_curl)
 
     ## initial condition & standard diagnostics
-    state = CFShallowWaters.initialize_SW(sphere, model, CFTestCases.initial_flow, testcase)
-    diags = CFShallowWaters.diagnostics(model)
+    state = model.initialize(CFTestCases.initial_flow, testcase)
+    diags = model.diagnostics()
     @info diags
-    scratch = CFTimeSchemes.scratch_space(model, state)
-    diags = CFShallowWaters.diagnostics(model)
+    scratch = model.scratch_space(state)
 #    return model, state, dt_dyn, MyScheme(Scheme(model), nothing, nstep), diags
     return model, diags, state, Scheme(model), dt_dyn
 end

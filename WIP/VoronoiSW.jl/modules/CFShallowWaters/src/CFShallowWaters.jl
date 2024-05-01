@@ -7,27 +7,14 @@ using ManagedLoops: @loops, @unroll
 using CookBooks
 using MutatingOrNot: void, Void
 
-#=
-using GFModels, GFPlanets, GFDomains, GFLoops, GFRegistries
-using GFPlanets: ConformalPlanet, ShallowTradPlanet, coriolis
-using GFBrackets: SW_bracket!
-using GFLoops: WrappedArray, wrap_array, @unroll, @offload
-
-import GFBrackets as BK
-import GFModels as Models
-import GFPlanets as Planets
-=#
-
 macro fast(code)
-#    debug = haskey(ENV, "GF_DEBUG") && (ENV["GF_DEBUG"] != "")
-    debug = true
+    debug = haskey(ENV, "GF_DEBUG") && (ENV["GF_DEBUG"] != "")
     return debug ? esc(code) : esc(quote
         @inbounds $code
     end)
 end
 
 abstract type AbstractSW end
-
 
 scratch_space(model::AbstractSW, u0) = allocate_SW_scratch(model.domain, u0)
 
@@ -87,5 +74,23 @@ coriolis_voronoi(F, planet, lat_v, Av) = F.(coriolis(planet, lat_v) .* Av)
 include("initialize.jl")
 include("tendencies.jl")
 include("diagnostics.jl")
+
+# expose model.initialize etc.
+
+# DO NOT include `methods` itself in the result return by `methods`
+@inline methods(::AbstractSW) = (; scratch_space, initialize, diagnostics)
+
+# the remainder is generic and would belong to a module
+struct MethodCall{Fun, O}
+    fun::Fun
+    object::O
+end
+@inline (call::MethodCall)(args...) = call.fun(call.object, args...)
+
+@inline methodnames(x) = propertynames(methods(x))
+@inline Base.propertynames(o::AbstractSW) = (methodnames(o)..., fieldnames(typeof(o))...)
+
+@inline Base.getproperty(o::AbstractSW, prop::Symbol) =
+    (prop in fieldnames(typeof(o))) ? getfield(o,prop) : MethodCall(getproperty(methods(o), prop), o)
 
 end # module

@@ -1,3 +1,5 @@
+initialize(model, fun, args...) = initialize_SW(model.domain, model, fun, args...)
+
 function initialize_SW(domain::VoronoiSphere, model, fun, args...)
     gh, ulon, ulat = allocate_fields( (:scalar, :vector, :vector), domain, eltype(domain) )
     for ij in eachindex(gh)
