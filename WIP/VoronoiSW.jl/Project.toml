@@ -2,6 +2,7 @@
 CFDomains = "3699aaca-035b-4155-96ec-eecb526248de"
 CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+ClimFlowsData = "f57ce217-a21f-4063-8e40-561e9bf56723"
 ClimFlowsTestCases = "55a4ed1b-ebae-44a5-bd1f-98d158431b8a"
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 CookBooks = "7bce7c31-0f61-4fd7-bdaf-6b04abfa2cc7"

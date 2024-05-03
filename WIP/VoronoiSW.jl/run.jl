@@ -11,13 +11,15 @@ unique!(push!(LOAD_PATH, "$(@__DIR__)/modules"))
 # include("preamble.jl")
 
 @time_imports begin
-    import CFDomains
+    import CFDomains: VoronoiSphere
     import ClimFlowsTestCases as CFTestCases
     import CFTimeSchemes
     import GFPlanets
     import CFShallowWaters
     using Filters: HyperDiffusion, filter!
     using MutatingOrNot: void
+    using ClimFlowsData: DYNAMICO_reader
+    using NetCDF: ncread
 end
 
 include("voronoi_mesh.jl")
@@ -102,7 +104,8 @@ end
 ## meshname, nu_gradrot = "uni.2deg.mesh.nc", 1e-15
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-16
 Float = Float32
-sphere = read_mesh(meshname; Float)
+sphere = VoronoiSphere(DYNAMICO_reader(ncread, "uni.1deg.mesh.nc") ; prec=Float)
+@info sphere
 
 model, diags, state, scheme, dt = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 1.5);
 fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV"; zoom=1)
