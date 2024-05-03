@@ -1,3 +1,17 @@
+"""
+    initial_state = initialize(model, fun, args...)
+    initial_state = model.initialize(fun, args...)
+
+Returns an discretized, model representation of the initial state described by function `fun`. `fun` is expected to follow the pattern:
+    gh, ulon, ulat = fun(lon, lat, args...)
+with `gh` geopotential, `ulon` zonal velocity and `ulat` meridional velocity.
+
+Details of the representation depend on the domain and numerical method. Since the domain is devoid of metric information (e.g. a unit sphere),
+metric coefficients are factored into the model representation, which is thus not directly interpretable in terms of observable quantities (e.g. wind).
+It may consist of several arrays, consisting of spherical harmonic coefficients, a discrete exterior calculus representation...
+
+Observable quantities may be computed using `model.diagnostics()`
+"""
 initialize(model, fun, args...) = initialize_SW(model.domain, model, fun, args...)
 
 function initialize_SW(domain::VoronoiSphere, model, fun, args...)
