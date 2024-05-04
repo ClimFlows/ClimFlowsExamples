@@ -171,7 +171,7 @@ function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
     return model, scheme, solver, state0
 end
 
-divisor(dt, T) = T / Int(ceil(T / dt))
+divisor(dt, T) = T / ceil(Int, T / dt)
 
 # main program
 

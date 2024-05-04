@@ -1,14 +1,25 @@
 #== Voronoi ==#
 
-function tendencies_SW!( (ducov,dgh), (ucov,gh), (qv, qe, U, B), model, mesh::VoronoiSphere)
+function same(x,y)
+    @assert x==y
+    return x
+end
+
+function scratch_SW(mesh::VoronoiSphere, (; ucov, ghcov))
+    F = same(eltype(ucov), eltype(ghcov))
+    return (U = similar(ucov), B = similar(ghcov), qv=similar(mesh.Av, F), qe = similar(ucov))
+end
+
+function tendencies_SW!( dstate, (; ucov,ghcov), scratch, model, mesh::VoronoiSphere)
     hodges = mesh.le_de
     radius = model.planet.radius
-    massflux!(U, ucov, gh, radius, mesh.edge_left_right, hodges)
-    bernoulli!(B, gh, ucov, radius, mesh.primal_deg, mesh.Ai, hodges, mesh.primal_edge)
-    BK.voronoi_potential_vorticity!(qv, model.fcov, ucov, gh, mesh.Av, mesh.dual_vertex, mesh.dual_edge, mesh.dual_ne, mesh.Riv2)
-    BK.voronoi_du!(ducov, qe, qv, U, B, mesh.edge_down_up,
+    U = massflux!(scratch.U, ucov, ghcov, radius, mesh.edge_left_right, hodges)
+    B = bernoulli!(scratch.B, ghcov, ucov, radius, mesh.primal_deg, mesh.Ai, hodges, mesh.primal_edge)
+    qv = voronoi_potential_vorticity!(scratch.qv, model.fcov, ucov, ghcov, mesh.Av, mesh.dual_vertex, mesh.dual_edge, mesh.dual_ne, mesh.Riv2)
+    ducov = voronoi_du!(dstate.ucov, scratch.qe, qv, U, B, mesh.edge_down_up,
         mesh.edge_left_right, mesh.trisk_deg, mesh.trisk, mesh.wee)
-    BK.voronoi_dm!(dgh, U, mesh.Ai, mesh.primal_deg, mesh.primal_edge, mesh.primal_ne)
+    dghcov = voronoi_dm!(dstate.ghcov, U, mesh.Ai, mesh.primal_deg, mesh.primal_edge, mesh.primal_ne)
+    return (ghcov=dghcov, ucov=ducov)
 end
 
 function tendencies_SW( (; ucov, ghcov), model, mesh::VoronoiSphere)
@@ -25,17 +36,15 @@ end
 
 #== Voronoi, mass flux ==#
 
-function massflux(ucov, m, radius, left_right, hodges)
-    U = similar(ucov)
-    massflux!(U, ucov, m, radius, left_right, hodges)
-    return U
-end
+massflux!(::Void, ucov, m, radius, left_right, hodges) =
+    massflux!(similar(ucov), ucov, m, radius, left_right, hodges)
 
 function massflux!(U::AbstractVector, ucov, m, radius, left_right, hodges)
     @fast for ij in eachindex(hodges)
         left, right = left_right[1,ij], left_right[2,ij]
         U[ij] = inv(2*radius*radius)*(m[left]+m[right])*ucov[ij]*hodges[ij]
     end
+    return U
 end
 
 massflux!(backend, U::AbstractMatrix, args...) = massflux_3D!(backend, U, args...)
@@ -54,11 +63,8 @@ end
 
 #== Voronoi, kinetic energy ==#
 
-function bernoulli(gh, ucov, radius, degree, areas, hodges, edges)
-    B = similar(gh)
-    bernoulli!(B, gh, ucov, radius, degree, areas, hodges, edges)
-    return B
-end
+bernoulli!(::Void, gh, ucov, radius, degree, areas, hodges, edges) =
+    bernoulli!(similar(gh), gh, ucov, radius, degree, areas, hodges, edges)
 
 function bernoulli!(B::AbstractVector, gh, ucov, radius, degree, areas, hodges, edges)
     inv_r2 = inv(radius*radius)
@@ -67,6 +73,7 @@ function bernoulli!(B::AbstractVector, gh, ucov, radius, degree, areas, hodges, 
         @unroll deg in 5:7 B[ij] = inv_r2 * (
             gh[ij] + inv_area*sum(hodges[edges[e,ij]]*ucov[edges[e,ij]]^2 for e=1:deg) )
     end
+    return B
 end
 
 bernoulli!(backend, B::AbstractMatrix, args...) = bernoulli_3D!(backend, B, args...)
@@ -91,11 +98,8 @@ end
 
 #== potential vorticity q = curl(ucov)/m ==#
 
-function voronoi_potential_vorticity!(::Void, fv, ucov, m, areas, cells, edges, signs, weights)
-    qv = similar(fv)
-    voronoi_potential_vorticity!(qv, fv, ucov, m, areas, cells, edges, signs, weights)
-    return qv
-end
+voronoi_potential_vorticity!(::Void, fv, ucov, m, areas, cells, edges, signs, weights) =
+    voronoi_potential_vorticity!(similar(fv, eltype(ucov)), fv, ucov, m, areas, cells, edges, signs, weights)
 
 function voronoi_potential_vorticity!(qv::AbstractVector, fv, ucov, m, areas, cells, edges, signs, weights)
     @fast @unroll for ij in eachindex(qv)
@@ -125,11 +129,8 @@ end
 
 #== mass tendency dm = -div(U) ==#
 
-function voronoi_dm!(::Void, U, areas, degree, edges, signs)
-    dm = similar(areas, eltype(U))
-    voronoi_dm!(dm, U, areas, degree, edges, signs)
-    return dm
-end
+voronoi_dm!(::Void, U, areas, degree, edges, signs) =
+    voronoi_dm!(similar(areas, eltype(U)), U, areas, degree, edges, signs)
 
 function voronoi_dm!(dm::AbstractVector, U, areas, degree, edges, signs)
     @fast for ij in eachindex(dm)
@@ -186,13 +187,10 @@ end
 
 #== velocity tendency du = -q x U - grad B ==#
 
-function voronoi_du!(::Void, qv, U, B, down_up, left_right, degree, edges, w)
-    du, qe = similar(U), similar(U)
-    voronoi_du!(du, qe, qv, U, B, down_up, left_right, degree, edges, w)
-    return du
-end
+voronoi_du!(::Void, ::Void, qv, U, B, down_up, left_right, degree, edges, w) =
+    voronoi_du!(similar(U), similar(U), qv, U, B, down_up, left_right, degree, edges, w)
 
-function voronoi_du!(du::AbstractVector, qe, qv, U, B, down_up, left_right, degree, edges, w)
+function voronoi_du!(du::V, qe::V, qv, U, B, down_up, left_right, degree, edges, w) where {V<:AbstractVector}
     # interpolate PV q from v-points (dual cells=triangles) to e-points (edges)
     @fast for ij in eachindex(qe)
         qe[ij] = (1//2)*(qv[down_up[2,ij]]+qv[down_up[1,ij]])

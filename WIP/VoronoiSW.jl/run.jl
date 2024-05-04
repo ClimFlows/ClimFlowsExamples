@@ -6,23 +6,28 @@
 # ## Preamble
 using Pkg; Pkg.activate(@__DIR__)
 unique!(push!(LOAD_PATH, "$(@__DIR__)/modules"))
+using InteractiveUtils
 
 # const debug = false
 # include("preamble.jl")
 
 @time_imports begin
-    import CFDomains: VoronoiSphere
+    import CFDomains: CFDomains, VoronoiSphere
     import ClimFlowsTestCases as CFTestCases
     import CFTimeSchemes
     import GFPlanets
     import CFShallowWaters
-    using Filters: HyperDiffusion, filter!
     using MutatingOrNot: void
     using ClimFlowsData: DYNAMICO_reader
-    using NetCDF: ncread
+    import ClimFlowsPlots: VoronoiSphere as VSPlots
+    using CookBooks
+
+    using Filters: HyperDiffusion, filter!
+    using NetCDF, CairoMakie
 end
 
-include("voronoi_mesh.jl")
+# belongs to CookBooks
+(book::CookBooks.CookBook)(; kwargs...) = open(book ; kwargs...)
 
 # ## Split time scheme performing `nstep` dynamics time steps followed by filter (e.g. hyperdiffusion)
 struct MyScheme{Dyn,Dissip}
@@ -31,6 +36,7 @@ struct MyScheme{Dyn,Dissip}
     nstep::Int
 end
 
+#=
 MyScheme(Scheme, model, dissip, nstep, dt) =
     MyScheme(Scheme(model, dt / nstep), dissip, nstep)
 
@@ -52,6 +58,7 @@ function advance_MyScheme!(future, scheme, state, t, dt, scratch)
 #    (; ucov) = state
 #    filter!(dissip, backend, ucov, dynamics.dt * nstep)
 end
+=#
 
 # ## Setup simulation
 
@@ -59,13 +66,12 @@ function setup_RSW(
     sphere;
     TestCase = CFTestCases.Williamson91{6},
     Float = Float32,
-    periods = 24,
-    hours_per_period = 1,
     courant = 1.5,
     Scheme = CFTimeSchemes.RungeKutta4,
     nstep = 1,
     niter_gradrot = 2,
     nu_gradrot = zero(Float),
+    interval = Float(3600)
 )
     ## physical parameters needed to run the model
     testcase = CFTestCases.testcase(TestCase, Float)
@@ -77,6 +83,9 @@ function setup_RSW(
     @info "Effective mesh size dx = $(round(dx/1e3)) km"
     dt_dyn = Float(courant * dx / sqrt(gH0))
     @info "Theoretical time step = $(round(dt_dyn)) s"
+    nstep = ceil(Int, interval/dt_dyn)
+    dt = interval / nstep
+    @info "Adjusted time step = $dt"
 
     ## model setup
     planet = GFPlanets.ShallowTradPlanet(R0, Omega)
@@ -84,40 +93,39 @@ function setup_RSW(
     dissip = HyperDiffusion(sphere, niter_gradrot, nu_gradrot, :vector_curl)
 
     ## initial condition & standard diagnostics
-    state = model.initialize(CFTestCases.initial_flow, testcase)
+    state0 = model.initialize(CFTestCases.initial_flow, testcase)
     diags = model.diagnostics()
     @info diags
-    scratch = model.scratch_space(state)
+
+    scheme = Scheme(model)
+    solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt_dyn ; u0=state0, mutating)
+    return model, diags, state0, scheme, solver, nstep, dt_dyn
 #    return model, state, dt_dyn, MyScheme(Scheme(model), nothing, nstep), diags
-    return model, diags, state, Scheme(model), dt_dyn
 end
 
-using CookBooks
-(book::CookBooks.CookBook)(; kwargs...) = open(book ; kwargs...)
-
-diagnose_pv(diags, state) = open(diags ; state) do session
-    CFDomains.primal_from_dual(max.(0,session.pv), session.domain)
-end
+diagnose_pv(diags, state) = CFDomains.primal_from_dual(max.(0, diags(; state).pv), sphere)
 
 # ## Main program
 
 ## meshname, nu_gradrot = "uni.2deg.mesh.nc", 1e-15
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-16
 Float = Float32
+periods, hours_per_period = 240, Float(1)
 sphere = VoronoiSphere(DYNAMICO_reader(ncread, "uni.1deg.mesh.nc") ; prec=Float)
 @info sphere
 
-model, diags, state, scheme, dt = setup_RSW(sphere; periods = 240, nu_gradrot, courant = 1.5);
-fig, pv = plot_voronoi_3D(sphere, diagnose_pv(diags, state), "PV"; zoom=1)
-display(fig)
+model, diags, state0, scheme, solver, nstep, dt = setup_RSW(sphere; nu_gradrot, courant = 1.5);
+solver! = solver(true)
 
-let future = state
-    @time for _ = 1:1000
-        future = CFTimeSchemes.advance!(void, scheme, future, zero(Float), dt, void)
+pv = Makie.Observable(diagnose_pv(diags, state0))
+fig = VSPlots.plot_orthographic(sphere, pv);
+# fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
+# fig = VSPlots.plot_2D(sphere, pv; resolution=0.25);
+
+let future = deepcopy(state0)
+    record(fig, "$(@__DIR__)/PV.mp4", 1:periods) do hour
+        @info "Hour $hour / $periods"
+        @time CFTimeSchemes.advance!(future, solver!, future, zero(Float), nstep)
+        pv[] = diagnose_pv(diags, future)
     end
-    pv[] = diagnose_pv(diags, future)
-    display(fig)
 end
-
-# @time run_movie_3D(sphere, diags, diagnose_pv, loop, "VoronoiSW_3D.mp4")
-## @time run_movie_2D(sphere, diags, diagnose_pv, loop, "VoronoiSW_2D.mp4")
