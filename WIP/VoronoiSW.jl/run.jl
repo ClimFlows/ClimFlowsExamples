@@ -8,9 +8,6 @@ using Pkg; Pkg.activate(@__DIR__)
 unique!(push!(LOAD_PATH, "$(@__DIR__)/modules"))
 using InteractiveUtils
 
-# const debug = false
-# include("preamble.jl")
-
 @time_imports begin
     import CFDomains: CFDomains, VoronoiSphere
     import ClimFlowsTestCases as CFTestCases
