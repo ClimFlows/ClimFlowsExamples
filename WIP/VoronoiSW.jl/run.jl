@@ -8,17 +8,17 @@ using Pkg; Pkg.activate(@__DIR__)
 using InteractiveUtils
 
 @time_imports begin
-
-    using MutatingOrNot: void
+    # lightweight dependencies
     import CFDomains: CFDomains, VoronoiSphere, HyperDiffusion
     import CFTimeSchemes: CFTimeSchemes, advance!
     import CFPlanets
     import CFShallowWaters
-
     import ClimFlowsTestCases as CFTestCases
+    # heavy dependencies
     using ClimFlowsData: DYNAMICO_reader
     import ClimFlowsPlots: VoronoiSphere as VSPlots
-    using NetCDF, CairoMakie
+    using CairoMakie
+    using NetCDF: ncread
 end
 
 # ## Custom IVP solver splitting dynamics and filtering (e.g. hyperdiffusion)
@@ -124,20 +124,21 @@ solver! = solver(true)
 
 pv = Makie.Observable(diagnose_pv(diags, state0))
 
-fig = VSPlots.plot_orthographic(sphere, pv);
+fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
+# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
 # fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
-# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5);
 
 let future = deepcopy(state0)
     record(fig, "$(@__DIR__)/PV.mp4", 1:periods) do hour
         @info "Hour $hour / $periods"
-        @time CFTimeSchemes.advance!(future, solver!, future, zero(Float), nstep)
+        @time advance!(future, solver!, future, zero(Float), nstep)
         pv[] = diagnose_pv(diags, future)
     end
 end
 
+# pure time integration without the overhead of the animation
 @time let future = deepcopy(state0)
     for _ in 1:periods
-        CFTimeSchemes.advance!(future, solver!, future, zero(Float), nstep)
+        advance!(future, solver!, future, zero(Float), nstep)
     end
 end ;
