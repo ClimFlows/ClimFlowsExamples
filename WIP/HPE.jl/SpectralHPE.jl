@@ -2,7 +2,6 @@
 
 @time_imports begin
     # lightweight dependencies
-    using CookBooks
     using MutatingOrNot: void, Void
     using ClimFlowsTestCases:
         Jablonowski06, testcase, describe, initial_flow, initial_surface
@@ -104,8 +103,14 @@ end
 
 # diagnostics
 
+module Diagnostics
+
+using MutatingOrNot: void, Void
+using CookBooks
+using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!, divergence!, curl!
+
 function diagnostics()
-    return CookBook(; mass_spat, surface_pressure, pressure)
+    return CookBook(; mass_spat, surface_pressure, pressure, conservative_variable, temperature)
 end
 
 mass_spat(model, state) = synthesis_scalar!(void, state.mass_spec, model.domain.layer)
@@ -132,6 +137,21 @@ function surface_pressure(model, state)
     ps_spat = synthesis_scalar!(void, ps_spec[:,1], model.domain.layer)
     return ps_spat .+ model.vcoord.ptop
 end
+
+function conservative_variable(mass_spat)
+    mass = @view mass_spat[:,:,:,1]
+    mass_consvar = @view mass_spat[:,:,:,2]
+    return @. mass_consvar / mass
+end
+
+function temperature(model, conservative_variable, pressure)
+    temp = model.gas(:p, :consvar).temperature
+    return temp.(pressure, conservative_variable)
+end
+
+end #module Diagnostics
+
+using .Diagnostics
 
 # model setup
 
@@ -171,16 +191,16 @@ upscale(x) = x
 
 @info "Initializing..."
 
-sph = SHTnsSpheres.SHTnsSphere(32)
+sph = SHTnsSpheres.SHTnsSphere(128)
 choices = (
     Fluid = IdealPerfectGas,
     consvar = :temperature,
     TestCase = Jablonowski06,
     Prec = Float64,
-    nz = 10,
+    nz = 30,
 )
 params = (
-    ptop = 0,
+    ptop = 100,
     Cp = 1000,
     kappa = 2 / 7,
     p0 = 1e5,
@@ -193,7 +213,7 @@ params = (Uplanet = params.radius * params.Omega, params...)
 
 interval = 3600.0
 model, state0 = setup(choices, params, sph; interval) #=, scheme, solver, state0 =#
-book = diagnostics()
+book = Diagnostics.diagnostics()
 
 ps = transpose(open(book; model, state = state0).surface_pressure)
 # Create a Makie observable and make a plot from it
