@@ -62,7 +62,7 @@ vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
 HPE_state(mass_spec, uv_spec) = (; mass_spec, uv_spec)
 
-# setup
+# initial condition
 
 initial_HPE(model::HPE, case) = initial_HPE(model, model.domain, case)
 initial_HPE(model::HPE, domain::Shell{nz, HVLayout}, case) where nz =
@@ -102,21 +102,38 @@ function initial_HPE_HV(model, nz, lon, lat, gas::SimpleFluid, case)
     return mass, ulon, ulat
 end
 
-function initial_HPE_point(model, k, lon, lat, gas::SimpleFluid, case)
-    ps, _ = initial_surface(lon, lat, case)
-    p = pressure_level(2k-1, ps, vcoord) # full level k
-    _, uu, vv = initial_flow(lon, lat, p, case)
-    ulon[i,j,k], ulat[i,j,k] = radius*uu, radius*vv
+# diagnostics
 
-    p_lower = pressure_level(2k-2, ps, vcoord) # lower interface
-    p_upper = pressure_level(2k, ps, vcoord) # upper interface
-    mg = p_lower - p_upper
-    Phi_lower, _, _ = initial_flow(lon, lat, p_lower, case)
-    Phi_upper, _, _ = initial_flow(lon, lat, p_upper, case)
-    v = (Phi_upper - Phi_lower)/mg # dPhi = -v . dp
-    mass[i,j,k,1] = radius^2*mg
-    mass[i,j,k,2] = (radius^2*mg) * consvar(p,v)
+function diagnostics()
+    return CookBook(; mass_spat, surface_pressure, pressure)
 end
+
+mass_spat(model, state) = synthesis_scalar!(void, state.mass_spec, model.domain.layer)
+pressure(model, mass_spat) = hydrostatic_pressure!(void, model, mass_spat)
+
+hydrostatic_pressure!(::Void, model, mass_spat) = hydrostatic_pressure!(similar(@view mass_spat[:,:,:,1]), model, mass_spat)
+
+function hydrostatic_pressure!(p::Array{Float64,3}, model, mass_spat::Array{Float64,4})
+    @assert size(mass_spat,3) == size(p,3)
+    radius, ptop, nz = model.planet.radius, model.vcoord.ptop, size(p,3)
+    rm2 = radius^-2
+    for i in axes(p,1), j in axes(p,2)
+        p[i,j,nz] = ptop + rm2*mass_spat[i,j,nz,1]/2
+    end
+    for i in axes(p,1), j in axes(p,2), k in nz:-1:2
+        p[i,j,k-1] = p[i,j,k] + (mass_spat[i,j,k,1]+mass_spat[i,j,k-1,1])*(rm2/2)
+    end
+    return p
+end
+
+function surface_pressure(model, state)
+    radius = model.planet.radius
+    ps_spec = @views (radius^-2)*sum(state.mass_spec[:,:,1]; dims=2)
+    ps_spat = synthesis_scalar!(void, ps_spec[:,1], model.domain.layer)
+    return ps_spat .+ model.vcoord.ptop
+end
+
+# model setup
 
 function setup(
     choices,
@@ -131,12 +148,9 @@ function setup(
     params = merge(choices, case.params, params)
     gas = params.Fluid(params)
     model = HPE(params, case, sph, gas)
-    state = initial_HPE(model, case)
-    #= initial flow
-    f(n) = map((lon, lat) -> initial_flow(lon, lat, case)[n], sph.lon, sph.lat)
-    gh, ulon, ulat = f(1), f(2), f(3)
-    state0 = initial_state(model, gh, ulon, ulat)
+    state0 = initial_HPE(model, case)
 
+    #=
     # time step based on maximum angular velocity of gravity waves
     umax = sqrt(maximum(@. ulon^2 + ulat^2))
     cmax = (umax + sqrt(case.params.gH0)) / radius
@@ -147,9 +161,11 @@ function setup(
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
     return model, scheme, solver, state0 =#
+    return model, state0
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
+upscale(x) = x
 
 # main program
 
@@ -176,22 +192,18 @@ params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 
 interval = 3600.0
-model = setup(choices, params, sph; interval) #=, scheme, solver, state0 =#
+model, state0 = setup(choices, params, sph; interval) #=, scheme, solver, state0 =#
 book = diagnostics()
 
-# Initial potential vorticity
-pv = open(book; model, state = state0) do diags
-    pv = diags.potential_vorticity
-    pv = transpose(max.(0.0, pv))
-end
+ps = transpose(open(book; model, state = state0).surface_pressure)
 # Create a Makie observable and make a plot from it
 # When we later update pv, the plot will update too.
-pv = Makie.Observable(upscale(pv))
+pv = Makie.Observable(upscale(ps))
 
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-lons = bounds_lon(model.sph.lon[1, :] * (180 / pi))[1:2:end]
-lats = bounds_lat(model.sph.lat[:, 1] * (180 / pi))[1:2:end]
-fig = orthographic(lons, lats, pv; colormap = :berlin)
+lons = bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
+lats = bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
+fig = orthographic(lons, lats, ps; colormap = :berlin)
 
 state = deepcopy(state0)
 solver! = solver(true)
