@@ -101,20 +101,70 @@ function initial_HPE_HV(model, nz, lon, lat, gas::SimpleFluid, case)
     return mass, ulon, ulat
 end
 
-# diagnostics
+# dynamics
 
-module Diagnostics
+module Dynamics
 
 using MutatingOrNot: void, Void
-using CookBooks
 using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!, divergence!, curl!
 
-function diagnostics()
-    return CookBook(; mass_spat, surface_pressure, pressure, conservative_variable, temperature)
+vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
+vector_spat(ucolat, ulon) = (; ucolat, ulon)
+
+function mass_flux!(flux, model, mass, uv)
+    invrad2 = model.planet.radius^-2
+    flux = vector_spat(
+        (@. flux.ucolat = -invrad2 * mass * uv.ucolat),
+        (@. flux.ulon = -invrad2 * mass * uv.ulon),
+    )
 end
 
-mass_spat(model, state) = synthesis_scalar!(void, state.mass_spec, model.domain.layer)
-pressure(model, mass_spat) = hydrostatic_pressure!(void, model, mass_spat)
+function tendencies!(dstate, model, state, scratch, t)
+    # spectral fields are suffixed with _spec
+    # vector, spectral = (spheroidal, toroidal)
+    # vector, spatial = (ucolat, ulon)
+    (; mass, uv, flux, flux_spec, B, B_spec, zeta, zeta_spec, qflux, qflux_spec) = scratch
+    (; mass_spec, uv_spec) = state
+    dmass_spec, duv_spec = dstate.mass_spec, dstate.uv_spec
+    sph, invrad2, fcov = model.domain.layer, model.planet.radius^-2, model.fcov
+
+    # flux-form mass budget:
+    #   ∂Φ/∂t = -∇(Φu, Φv)
+    # uv is the momentum 1-form = a(u,v)
+    # gh is the 2-form a²Φ
+    # divergence! is relative to the unit sphere
+    #   => scale flux by radius^-2
+    mass = synthesis_scalar!(mass, mass_spec, sph)
+    uv = synthesis_vector!(uv, uv_spec, sph)
+    flux = vector_spat(
+        (@. flux.ucolat = -invrad2 * mass * uv.ucolat),
+        (@. flux.ulon = -invrad2 * mass * uv.ulon),
+    )
+    flux_spec = analysis_vector!(flux_spec, flux, sph)
+    dmass_spec = divergence!(dmass_spec, flux_spec, sph)
+
+    # curl-form momentum budget:
+    #   ∂u/∂t = (f+ζ)v - ∂B/∂x
+    #   ∂v/∂t = -(f+ζ)u - ∂B/∂y
+    #   B = (u²+v²)2 + gh
+    # uv is momentum = a*(u,v)
+    # curl! is relative to the unit sphere
+    # fcov, zeta and gh are the 2-forms a²f, a²ζ, a²Φ
+    #   => scale B and qflux by radius^-2
+    zeta_spec = curl!(zeta_spec, uv_spec, sph)
+    zeta = synthesis_scalar!(zeta, zeta_spec, sph)
+    qflux = vector_spat(
+        (@. qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon),
+        (@. qflux.ulon = -invrad2 * (zeta + fcov) * uv.ucolat),
+    )
+    B = @. B = invrad2 * (mass + (uv.ucolat^2 + uv.ulon^2) / 2) # FIXME
+    B_spec = analysis_scalar!(B_spec, B, sph)
+    qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
+    duv_spec = vector_spec(
+        (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
+        (@. duv_spec.toroidal = qflux_spec.toroidal),
+    )
+end
 
 hydrostatic_pressure!(::Void, model, mass_spat) = hydrostatic_pressure!(similar(@view mass_spat[:,:,:,1]), model, mass_spat)
 
@@ -130,6 +180,29 @@ function hydrostatic_pressure!(p::Array{Float64,3}, model, mass_spat::Array{Floa
     end
     return p
 end
+
+end # module Dynamics
+
+using .Dynamics
+
+# diagnostics
+
+module Diagnostics
+
+using MutatingOrNot: void, Void
+using CookBooks
+using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!, divergence!, curl!
+
+using ..Dynamics
+
+diagnostics() = CookBook(;
+    dstate, mass_spat, surface_pressure, pressure,
+    conservative_variable, temperature)
+
+mass_spat(model, state) = synthesis_scalar!(void, state.mass_spec, model.domain.layer)
+pressure(model, mass_spat) = Dynamics.hydrostatic_pressure!(void, model, mass_spat)
+
+dstate(model, state) = Dynamics.tendencies!(void, model, state, void, 0.0)
 
 function surface_pressure(model, state)
     radius = model.planet.radius
