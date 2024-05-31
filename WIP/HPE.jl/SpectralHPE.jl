@@ -13,6 +13,7 @@
     using CFPlanets: CFPlanets, ShallowTradPlanet, coriolis
 
     using CFDomains: VoronoiSphere
+    import ClimFlowsPlots.SpectralSphere as Plots
 
     using SHTnsSpheres:
         SHTnsSpheres,
@@ -113,8 +114,6 @@ function setup(
     choices,
     params,
     sph;
-    courant = 2.0,
-    interval = 3600.0,
     hd_n = 8,
     hd_nu = 1e-2,
 )
@@ -124,21 +123,18 @@ function setup(
     model = HPE(params, case, sph, gas)
     state = initial_HPE(model, case)
 
-    book = Diagnostics.diagnostics()
-    cmax = maximum(open(book; model, state).sound_speed)
-    @info "Maximum sound speed" cmax
-    #=
-    # time step based on maximum angular velocity of gravity waves
-    umax = sqrt(maximum(@. ulon^2 + ulat^2))
-    cmax = (umax + sqrt(case.params.gH0)) / radius
-    dt = courant / cmax / sqrt(sph.lmax * sph.lmax + 1)
-    dt = divisor(dt, interval)
-    @info "Time step" umax, cmax, dt
+    # time step based on maximum sound speed
+    diags = Diagnostics.diagnostics()
+    cmax = let session = open(diags; model, state), uv=session.uv
+        maximum(session.sound_speed + @. sqrt(uv.ucolat^2+uv.ulon^2))
+    end
+    dt = params.radius * params.courant / cmax / sqrt(sph.lmax * sph.lmax + 1)
+    dt = divisor(dt, params.interval)
+    @info "Time step" cmax dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
-    return model, scheme, solver, state0 =#
-    return model, state
+    return model, state, diags, scheme, solver
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
@@ -148,7 +144,8 @@ upscale(x) = x
 
 @info "Initializing..."
 
-sph = SHTnsSpheres.SHTnsSphere(128)
+#sph = SHTnsSpheres.SHTnsSphere(128)
+sph = SHTnsSpheres.SHTnsSphere(64)
 choices = (
     Fluid = IdealPerfectGas,
     consvar = :temperature,
@@ -164,22 +161,51 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
+    courant = 2,
+    interval = 3600 # 1-hour intervals
 )
+
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
+model, state0, diags, scheme, solver = setup(choices, params, sph)
 
-interval = 3600.0
-model, state0 = setup(choices, params, sph; interval) #=, scheme, solver, state0 =#
+# temp(state) = transpose(open(diags; model, state).temperature[:,:,1])
+diag(state) = transpose(open(diags; model, state).uv.ucolat[:,:,1])
+diag_obs = Makie.Observable(diag(state0))
 
-ps = transpose(open(book; model, state = state0).surface_pressure)
-# Create a Makie observable and make a plot from it
-# When we later update pv, the plot will update too.
-pv = Makie.Observable(upscale(ps))
-
+lons = Plots.bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
+lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-lons = bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
-lats = bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
-fig = orthographic(lons, lats, ps; colormap = :berlin)
+fig = Plots.orthographic(lons, lats, diag_obs; colormap = :berlin)
 
-state = deepcopy(state0)
-solver! = solver(true)
+@info "Starting simulation."
+
+CFTimeSchemes.tendencies!(dstate, model::HPE, state, scratch, t) = Dynamics.tendencies!(dstate, model, state, scratch, t)
+
+# solver! = solver(true) # mutating, non-allocating
+solver = solver(false) # non-mutating, allocating
+
+@profview let N=120 # number of intervals to simulate
+    # separate thread running the simulation
+    channel = Channel(spawn=true) do ch
+        state = deepcopy(state0)
+        nstep = Int(params.interval/solver.dt)
+        for iter in 1:N
+            for istep in 1:nstep
+                state, _ = advance!(void, solver, state, 0.0, 1)
+#                (; gh_spec, uv_spec) = state
+#                (; toroidal) = uv_spec
+#                toroidal = model.filter(toroidal, toroidal, model.sph)
+#                uv_spec = vector_spec(uv_spec.spheroidal, toroidal)
+#                state = RSW_state(gh_spec, uv_spec)
+            end
+            put!(ch, diag(state))
+        end
+        @info "Worker: finished"
+    end
+    # main thread making the movie
+    record(fig, "$(@__DIR__)/ulat.mp4", 1:N) do hour
+        @info hour
+        diag_obs[] = take!(channel)
+    end
+end

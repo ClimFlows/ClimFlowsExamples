@@ -71,10 +71,10 @@ function tendencies_all(dstate, model, state, scratch, t)
     )
     qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
     B_spec = analysis_scalar!(B_spec, copy(B), sph)
-#    duv_spec = vector_spec(
-#        (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
-#        (@. duv_spec.toroidal = qflux_spec.toroidal),
-#    )
+    duv_spec = vector_spec(
+        (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
+        (@. duv_spec.toroidal = qflux_spec.toroidal),
+    )
     return (; dmass_spec, duv_spec, zeta, p, B, exner, consvar)
 end
 
@@ -103,8 +103,7 @@ function Bernoulli!(B, exner, consvar, Phi, model, mass::Array{Float64,4}, p::Ar
     @assert size(mass,3) == size(p,3)
     @assert size(mass,4) == 2 # simple fluid
     Phi = @. Phi = model.Phis
-#    compute_Bernoulli!(VectorizedCPU(8), B, exner, consvar, Phi, mass, p, uv, model)
-    compute_Bernoulli!(nothing, B, exner, consvar, Phi, mass, p, uv, model)
+    compute_Bernoulli!(VectorizedCPU(8), B, exner, consvar, Phi, mass, p, uv, model)
     return B, exner, consvar
 end
 
@@ -179,7 +178,7 @@ function conservative_variable(mass)
     return @. mass_consvar / mass_air
 end
 
-temperature(model, conservative_variable, pressure) =
+temperature(model, pressure, conservative_variable) =
     model.gas(:p, :consvar).temperature.(pressure, conservative_variable)
 
 sound_speed(model, pressure, temperature) =
