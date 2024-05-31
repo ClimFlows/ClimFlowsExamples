@@ -6,7 +6,7 @@ using MutatingOrNot: void, Void
 using ManagedLoops: @loops, @vec
 using LoopManagers: VectorizedCPU
 using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!,
-    synthesis_spheroidal!, divergence!, curl!
+    synthesis_spheroidal!, divergence!, curl!, shtns_alloc
 
 vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
@@ -23,6 +23,32 @@ end
 function tendencies!(dstate, model, state, scratch, t)
     (; dmass_spec, duv_spec) = tendencies_all(dstate, model, state, scratch, t)
     return HPE_state(dmass_spec, duv_spec)
+end
+
+function scratch_space(model, state)
+    prec(::Type{Complex{F}}) where F = F
+    sph, nz, F = model.domain.layer, size(state.mass_spec, 2), prec(eltype(state.mass_spec))
+
+    scalar_spat(dims...) = shtns_alloc(F, Val(:scalar_spat), sph, dims...)
+    scalar_spec(dims...) = shtns_alloc(F, Val(:scalar_spec), sph, dims...)
+    vector_spat(dims...) = shtns_alloc(F, Val(:vector_spat), sph, dims...)
+    vector_spec(dims...) = shtns_alloc(F, Val(:vector_spec), sph, dims...)
+
+    # geopotential (2D buffer)
+    geopot = scalar_spat()
+    # velocity, mass, mass flux
+    uv, mass = vector_spat(nz), scalar_spat(nz,2)
+    flux, flux_spec = vector_spat(nz,2), vector_spec(nz, 2)
+    # vorticity & its flux
+    zeta, zeta_spec = scalar_spat(nz), scalar_spec(nz)
+    qflux, qflux_spec = vector_spat(nz), vector_spec(nz)
+    # pressure, consvar, Bernoulli, exner
+    p, consvar = scalar_spat(nz), scalar_spat(nz)
+    B, B_spec = scalar_spat(nz), scalar_spec(nz)
+    exner, exner_spec, grad_exner = scalar_spat(nz), scalar_spec(nz), vector_spat(nz)
+
+    return  (; uv, flux, flux_spec, zeta, zeta_spec, qflux, qflux_spec,
+        mass, p, geopot, consvar, B, exner, B_spec, exner_spec, grad_exner)
 end
 
 function tendencies_all(dstate, model, state, scratch, t)
@@ -63,14 +89,14 @@ function tendencies_all(dstate, model, state, scratch, t)
     p = hydrostatic_pressure!(p, model, mass)
     B, exner, consvar = Bernoulli!(B, exner, consvar, geopot, model, mass, p, uv)
 
-    exner_spec = analysis_scalar!(exner_spec, copy(exner), sph)
+    exner_spec = analysis_scalar!(exner_spec, exner, sph)
     grad_exner = synthesis_spheroidal!(grad_exner, exner_spec, sph)
     qflux = vector_spat(
         (@. qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon - consvar * grad_exner.ucolat),
         (@. qflux.ulon  = -invrad2 * (zeta + fcov) * uv.ucolat - consvar * grad_exner.ulon),
     )
     qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
-    B_spec = analysis_scalar!(B_spec, copy(B), sph)
+    B_spec = analysis_scalar!(B_spec, B, sph)
     duv_spec = vector_spec(
         (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
         (@. duv_spec.toroidal = qflux_spec.toroidal),
@@ -121,9 +147,6 @@ end
                 v = Volume(p[i,j,k], consvar_ijk)
                 Phi_up = Phi[i,j] + invrad2*mass[i,j,k,1]*v # geopotential at upper interface
                 B[i,j,k] = ke + (Phi_up+Phi[i,j])/2 # + h # (h-consvar_ijk*exner_ijk)
-#                B[i,j,k] = ke
-#                B[i,j,k] = Phi[i,j]
-#                B[i,j,k] = v
                 consvar[i,j,k] = consvar_ijk
                 exner[i,j,k] = exner_ijk
                 Phi[i,j] = Phi_up

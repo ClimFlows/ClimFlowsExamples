@@ -105,8 +105,13 @@ function initial_HPE_HV(model, nz, lon, lat, gas::SimpleFluid, case)
 end
 
 includet("spectral_modules.jl")
-using .Dynamics
-using .Diagnostics
+CFTimeSchemes.tendencies!(dstate, model::HPE, state, scratch, t) = Dynamics.tendencies!(dstate, model, state, scratch, t)
+CFTimeSchemes.scratch_space(model::HPE, state) = Dynamics.scratch_space(model, state)
+function CFTimeSchemes.model_dstate(::HPE, state)
+    sim(x) = similar(x)
+    sim(x::NamedTuple) = map(sim, x)
+    sim(state)
+end
 
 # model setup
 
@@ -162,7 +167,7 @@ params = (
     radius = 6.4e6,
     Omega = 7.272e-5,
     courant = 2,
-    interval = 3600 # 1-hour intervals
+    interval = 7200 # 1-hour intervals
 )
 
 params = map(Float64, params)
@@ -176,23 +181,25 @@ diag_obs = Makie.Observable(diag(state0))
 lons = Plots.bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
 lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-fig = Plots.orthographic(lons, lats, diag_obs; colormap = :berlin)
+fig = Plots.orthographic(lons.-90, lats, diag_obs; colormap = :berlin)
 
 @info "Starting simulation."
 
-CFTimeSchemes.tendencies!(dstate, model::HPE, state, scratch, t) = Dynamics.tendencies!(dstate, model, state, scratch, t)
-
-# solver! = solver(true) # mutating, non-allocating
+solver! = solver(true) # mutating, non-allocating
 solver = solver(false) # non-mutating, allocating
 
-@profview let N=120 # number of intervals to simulate
+@profview let ndays=5
+    interval = params.interval
+    N=Int(ndays*24*3600/interval)
+
     # separate thread running the simulation
     channel = Channel(spawn=true) do ch
         state = deepcopy(state0)
         nstep = Int(params.interval/solver.dt)
         for iter in 1:N
             for istep in 1:nstep
-                state, _ = advance!(void, solver, state, 0.0, 1)
+                advance!(state, solver!, state, 0.0, 1)
+#                state, _ = advance!(void, solver, state, 0.0, 1)
 #                (; gh_spec, uv_spec) = state
 #                (; toroidal) = uv_spec
 #                toroidal = model.filter(toroidal, toroidal, model.sph)
@@ -204,8 +211,8 @@ solver = solver(false) # non-mutating, allocating
         @info "Worker: finished"
     end
     # main thread making the movie
-    record(fig, "$(@__DIR__)/ulat.mp4", 1:N) do hour
-        @info hour
+    record(fig, "$(@__DIR__)/ulat.mp4", 1:N) do i
+        @info "t=$(div(interval*i,3600))h"
         diag_obs[] = take!(channel)
     end
 end
