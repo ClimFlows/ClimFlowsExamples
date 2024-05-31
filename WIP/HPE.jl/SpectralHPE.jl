@@ -3,6 +3,8 @@
 @time_imports begin
     # lightweight dependencies
     using MutatingOrNot: void, Void
+    using SIMDMathFunctions
+
     using ClimFlowsTestCases:
         Jablonowski06, testcase, describe, initial_flow, initial_surface
     using CFTimeSchemes: CFTimeSchemes, advance!
@@ -51,9 +53,9 @@ function HPE(params, case, sph, gas)
     planet = ShallowTradPlanet(radius, Omega)
     f(lon, lat) = coriolis(planet, lon, lat)
     geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
-    fcov = (radius * radius) * f.(lon, lat)
+#    fcov = (radius * radius) * f.(lon, lat)
     Phis = geopotential.(lon, lat)
-    return HPE(vcoord, planet, shell(sph, params.nz), gas, fcov, Phis)
+    return HPE(vcoord, planet, shell(sph, params.nz), gas, f.(lon, lat), Phis)
 end
 
 ## these "constructors" seem to help with type stability
@@ -101,129 +103,8 @@ function initial_HPE_HV(model, nz, lon, lat, gas::SimpleFluid, case)
     return mass, ulon, ulat
 end
 
-# dynamics
-
-module Dynamics
-
-using MutatingOrNot: void, Void
-using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!, divergence!, curl!
-
-vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
-vector_spat(ucolat, ulon) = (; ucolat, ulon)
-
-function mass_flux!(flux, model, mass, uv)
-    invrad2 = model.planet.radius^-2
-    flux = vector_spat(
-        (@. flux.ucolat = -invrad2 * mass * uv.ucolat),
-        (@. flux.ulon = -invrad2 * mass * uv.ulon),
-    )
-end
-
-function tendencies!(dstate, model, state, scratch, t)
-    # spectral fields are suffixed with _spec
-    # vector, spectral = (spheroidal, toroidal)
-    # vector, spatial = (ucolat, ulon)
-    (; mass, uv, flux, flux_spec, B, B_spec, zeta, zeta_spec, qflux, qflux_spec) = scratch
-    (; mass_spec, uv_spec) = state
-    dmass_spec, duv_spec = dstate.mass_spec, dstate.uv_spec
-    sph, invrad2, fcov = model.domain.layer, model.planet.radius^-2, model.fcov
-
-    # flux-form mass budget:
-    #   ∂Φ/∂t = -∇(Φu, Φv)
-    # uv is the momentum 1-form = a(u,v)
-    # gh is the 2-form a²Φ
-    # divergence! is relative to the unit sphere
-    #   => scale flux by radius^-2
-    mass = synthesis_scalar!(mass, mass_spec, sph)
-    uv = synthesis_vector!(uv, uv_spec, sph)
-    flux = vector_spat(
-        (@. flux.ucolat = -invrad2 * mass * uv.ucolat),
-        (@. flux.ulon = -invrad2 * mass * uv.ulon),
-    )
-    flux_spec = analysis_vector!(flux_spec, flux, sph)
-    dmass_spec = divergence!(dmass_spec, flux_spec, sph)
-
-    # curl-form momentum budget:
-    #   ∂u/∂t = (f+ζ)v - ∂B/∂x
-    #   ∂v/∂t = -(f+ζ)u - ∂B/∂y
-    #   B = (u²+v²)2 + gh
-    # uv is momentum = a*(u,v)
-    # curl! is relative to the unit sphere
-    # fcov, zeta and gh are the 2-forms a²f, a²ζ, a²Φ
-    #   => scale B and qflux by radius^-2
-    zeta_spec = curl!(zeta_spec, uv_spec, sph)
-    zeta = synthesis_scalar!(zeta, zeta_spec, sph)
-    qflux = vector_spat(
-        (@. qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon),
-        (@. qflux.ulon = -invrad2 * (zeta + fcov) * uv.ucolat),
-    )
-    B = @. B = invrad2 * (mass + (uv.ucolat^2 + uv.ulon^2) / 2) # FIXME
-    B_spec = analysis_scalar!(B_spec, B, sph)
-    qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
-    duv_spec = vector_spec(
-        (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),
-        (@. duv_spec.toroidal = qflux_spec.toroidal),
-    )
-end
-
-hydrostatic_pressure!(::Void, model, mass_spat) = hydrostatic_pressure!(similar(@view mass_spat[:,:,:,1]), model, mass_spat)
-
-function hydrostatic_pressure!(p::Array{Float64,3}, model, mass_spat::Array{Float64,4})
-    @assert size(mass_spat,3) == size(p,3)
-    radius, ptop, nz = model.planet.radius, model.vcoord.ptop, size(p,3)
-    rm2 = radius^-2
-    for i in axes(p,1), j in axes(p,2)
-        p[i,j,nz] = ptop + rm2*mass_spat[i,j,nz,1]/2
-    end
-    for i in axes(p,1), j in axes(p,2), k in nz:-1:2
-        p[i,j,k-1] = p[i,j,k] + (mass_spat[i,j,k,1]+mass_spat[i,j,k-1,1])*(rm2/2)
-    end
-    return p
-end
-
-end # module Dynamics
-
+includet("spectral_modules.jl")
 using .Dynamics
-
-# diagnostics
-
-module Diagnostics
-
-using MutatingOrNot: void, Void
-using CookBooks
-using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!, divergence!, curl!
-
-using ..Dynamics
-
-diagnostics() = CookBook(;
-    dstate, mass_spat, surface_pressure, pressure,
-    conservative_variable, temperature)
-
-mass_spat(model, state) = synthesis_scalar!(void, state.mass_spec, model.domain.layer)
-pressure(model, mass_spat) = Dynamics.hydrostatic_pressure!(void, model, mass_spat)
-
-dstate(model, state) = Dynamics.tendencies!(void, model, state, void, 0.0)
-
-function surface_pressure(model, state)
-    radius = model.planet.radius
-    ps_spec = @views (radius^-2)*sum(state.mass_spec[:,:,1]; dims=2)
-    ps_spat = synthesis_scalar!(void, ps_spec[:,1], model.domain.layer)
-    return ps_spat .+ model.vcoord.ptop
-end
-
-function conservative_variable(mass_spat)
-    mass = @view mass_spat[:,:,:,1]
-    mass_consvar = @view mass_spat[:,:,:,2]
-    return @. mass_consvar / mass
-end
-
-function temperature(model, conservative_variable, pressure)
-    temp = model.gas(:p, :consvar).temperature
-    return temp.(pressure, conservative_variable)
-end
-
-end #module Diagnostics
-
 using .Diagnostics
 
 # model setup
@@ -241,8 +122,11 @@ function setup(
     params = merge(choices, case.params, params)
     gas = params.Fluid(params)
     model = HPE(params, case, sph, gas)
-    state0 = initial_HPE(model, case)
+    state = initial_HPE(model, case)
 
+    book = Diagnostics.diagnostics()
+    cmax = maximum(open(book; model, state).sound_speed)
+    @info "Maximum sound speed" cmax
     #=
     # time step based on maximum angular velocity of gravity waves
     umax = sqrt(maximum(@. ulon^2 + ulat^2))
@@ -254,7 +138,7 @@ function setup(
     scheme = CFTimeSchemes.RungeKutta4(model)
     solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
     return model, scheme, solver, state0 =#
-    return model, state0
+    return model, state
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
@@ -286,7 +170,6 @@ params = (Uplanet = params.radius * params.Omega, params...)
 
 interval = 3600.0
 model, state0 = setup(choices, params, sph; interval) #=, scheme, solver, state0 =#
-book = Diagnostics.diagnostics()
 
 ps = transpose(open(book; model, state = state0).surface_pressure)
 # Create a Makie observable and make a plot from it
