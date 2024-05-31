@@ -47,6 +47,12 @@ function scratch_space(model, state)
     B, B_spec = scalar_spat(nz), scalar_spec(nz)
     exner, exner_spec, grad_exner = scalar_spat(nz), scalar_spec(nz), vector_spat(nz)
 
+    # reuse some buffers
+    exner = p
+    zeta_spec = exner_spec
+    qflux = grad_exner
+    B_spec = zeta_spec
+
     return  (; uv, flux, flux_spec, zeta, zeta_spec, qflux, qflux_spec,
         mass, p, geopot, consvar, B, exner, B_spec, exner_spec, grad_exner)
 end
@@ -84,18 +90,19 @@ function tendencies_all(dstate, model, state, scratch, t)
     # curl! is relative to the unit sphere
     # fcov, zeta and gh are the 2-forms a²f, a²ζ, a²Φ
     #   => scale B and qflux by radius^-2
-    zeta_spec = curl!(zeta_spec, uv_spec, sph)
-    zeta = synthesis_scalar!(zeta, zeta_spec, sph)
     p = hydrostatic_pressure!(p, model, mass)
     B, exner, consvar = Bernoulli!(B, exner, consvar, geopot, model, mass, p, uv)
-
     exner_spec = analysis_scalar!(exner_spec, exner, sph)
     grad_exner = synthesis_spheroidal!(grad_exner, exner_spec, sph)
+
+    zeta_spec = curl!(zeta_spec, uv_spec, sph)
+    zeta = synthesis_scalar!(zeta, zeta_spec, sph)
     qflux = vector_spat(
         (@. qflux.ucolat = invrad2 * (zeta + fcov) * uv.ulon - consvar * grad_exner.ucolat),
         (@. qflux.ulon  = -invrad2 * (zeta + fcov) * uv.ucolat - consvar * grad_exner.ulon),
     )
     qflux_spec = analysis_vector!(qflux_spec, qflux, sph)
+
     B_spec = analysis_scalar!(B_spec, B, sph)
     duv_spec = vector_spec(
         (@. duv_spec.spheroidal = qflux_spec.spheroidal - B_spec),

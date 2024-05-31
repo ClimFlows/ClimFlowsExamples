@@ -188,7 +188,7 @@ fig = Plots.orthographic(lons.-90, lats, diag_obs; colormap = :berlin)
 solver! = solver(true) # mutating, non-allocating
 solver = solver(false) # non-mutating, allocating
 
-@profview let ndays=5
+@profview let ndays=6
     interval = params.interval
     N=Int(ndays*24*3600/interval)
 
