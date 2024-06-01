@@ -1,18 +1,3 @@
-#================= multi-layer domain ==================#
-
-struct HVLayout end # memory layout where horizontal layers are contiguous
-struct VHLayout end # memory layout where columns are contiguous
-
-struct Shell{nz, L, D}
-    layout::L
-    layer::D
-    Shell(nz::Int, layout::L, layer::D) where {L,D} = new{nz, L, D}(layout, layer)
-end
-shell(layer::SHTnsSphere, nz) = Shell(nz, HVLayout(), layer)
-shell(layer::VoronoiSphere, nz) = Shell(nz, VHLayout(), layer)
-
-layers(::Shell{nz}) where nz = nz
-
 #================= Lagrangian HPE =================#
 """
     abstract type VerticalCoordinate{N} end
@@ -72,7 +57,7 @@ struct LagrangianHPE{Manager, Domain, VCoord, Planet, Gas<:AbstractFluid, Phisur
     fcov::Fcov
 end
 
-function initialize_LHPE(shell::Shell{nz, HVLayout}, model, fun_ps, fun_Phi, args...) where nz
+function initialize_LHPE(shell::Shell{nz, CFDomains.HVLayout}, model, fun_ps, fun_Phi, args...) where nz
     sanity_checks(model, model.vcoord)
     ulon, ulat = allocate_fields( (:scalar_spat, :scalar_spat), shell, eltype(model) )
     pressure, geopot = allocate_fields( (:scalar_spat, :scalar_spat), Domains.interfaces(shell), eltype(model) )
