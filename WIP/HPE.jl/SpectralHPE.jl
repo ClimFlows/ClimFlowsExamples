@@ -36,6 +36,10 @@
     using BenchmarkTools: @benchmark
 end
 
+macro skip(args...)
+    return nothing
+end
+
 include("LagrangianHPE.jl")
 
 struct HPE{Coord,Domain<:Shell,Fluid<:AbstractFluid}
@@ -149,8 +153,9 @@ upscale(x) = x
 
 @info "Initializing..."
 
-#sph = SHTnsSpheres.SHTnsSphere(128)
+# sph = SHTnsSpheres.SHTnsSphere(128)
 sph = SHTnsSpheres.SHTnsSphere(64)
+
 choices = (
     Fluid = IdealPerfectGas,
     consvar = :temperature,
@@ -167,14 +172,13 @@ params = (
     radius = 6.4e6,
     Omega = 7.272e-5,
     courant = 2,
-    interval = 7200 # 1-hour intervals
+    interval = 6*3600 # 6-hour intervals
 )
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 model, state0, diags, scheme, solver = setup(choices, params, sph)
 
-# temp(state) = transpose(open(diags; model, state).temperature[:,:,1])
 diag(state) = transpose(open(diags; model, state).uv.ucolat[:,:,1])
 diag_obs = Makie.Observable(diag(state0))
 
@@ -183,12 +187,21 @@ lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
 fig = Plots.orthographic(lons.-90, lats, diag_obs; colormap = :berlin)
 
-@info "Starting simulation."
-
 solver! = solver(true) # mutating, non-allocating
 solver = solver(false) # non-mutating, allocating
 
-@profview let ndays=6
+@info "Profiling..."
+let ndays=1
+    interval = params.interval
+    N=Int(ndays*24*3600/interval)
+    nstep = Int(params.interval/solver.dt)
+    state = deepcopy(state0)
+    advance!(state, solver!, state, 0.0, 1)
+    @time advance!(state, solver!, state, 0.0, N*nstep)
+end
+
+@info "Starting simulation."
+@time let ndays=6
     interval = params.interval
     N=Int(ndays*24*3600/interval)
 

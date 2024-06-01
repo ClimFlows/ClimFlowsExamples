@@ -4,7 +4,7 @@ module Dynamics
 
 using MutatingOrNot: void, Void
 using ManagedLoops: @loops, @vec
-using LoopManagers: VectorizedCPU
+using LoopManagers: VectorizedCPU, MultiThread
 using SHTnsSpheres: analysis_scalar!, synthesis_scalar!, analysis_vector!, synthesis_vector!,
     synthesis_spheroidal!, divergence!, curl!, shtns_alloc
 
@@ -136,7 +136,7 @@ function Bernoulli!(B, exner, consvar, Phi, model, mass::Array{Float64,4}, p::Ar
     @assert size(mass,3) == size(p,3)
     @assert size(mass,4) == 2 # simple fluid
     Phi = @. Phi = model.Phis
-    compute_Bernoulli!(VectorizedCPU(8), B, exner, consvar, Phi, mass, p, uv, model)
+    compute_Bernoulli!(MultiThread(VectorizedCPU(8)), B, exner, consvar, Phi, mass, p, uv, model)
     return B, exner, consvar
 end
 
