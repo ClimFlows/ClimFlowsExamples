@@ -133,9 +133,9 @@ upscale(x) = x
 
 # main program
 
-@info "Initializing STHns..."
+@info "Initializing spherical harmonics..."
 # sph = SHTnsSphere(128)
-@time sph = SHTnsSphere(32)
+@time sph = SHTnsSphere(48)
 
 @info "Model setup..."
 

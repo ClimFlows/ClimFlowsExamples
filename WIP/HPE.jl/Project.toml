@@ -19,4 +19,5 @@ SIMDMathFunctions = "d22a7203-ad50-4fbc-abc4-d6ac724cca58"
 
 [compat]
 ClimFlowsPlots = "0.1.1"
+ClimFluids = "0.1.1"
 SHTnsSpheres = "0.2.4"

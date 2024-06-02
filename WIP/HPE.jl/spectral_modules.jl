@@ -145,15 +145,13 @@ end
         ux, uy = uv.ucolat, uv.ulon
         invrad2 = model.planet.radius^-2
         Exner = model.gas(:p, :consvar).exner_functions
-        Volume = model.gas(:p, :consvar).specific_volume
         @inbounds for j in jrange, k in axes(p,3)
             @vec for i in irange
                 ke = (invrad2/2)*(ux[i,j,k]^2 + uy[i,j,k]^2)
                 consvar_ijk = mass[i,j,k,2]/mass[i,j,k,1]
-                h, _, exner_ijk = Exner(p[i,j,k], consvar_ijk)
-                v = Volume(p[i,j,k], consvar_ijk)
+                h, v, exner_ijk = Exner(p[i,j,k], consvar_ijk)
                 Phi_up = Phi[i,j] + invrad2*mass[i,j,k,1]*v # geopotential at upper interface
-                B[i,j,k] = ke + (Phi_up+Phi[i,j])/2 # + h # (h-consvar_ijk*exner_ijk)
+                B[i,j,k] = ke + (Phi_up+Phi[i,j])/2 + (h-consvar_ijk*exner_ijk)
                 consvar[i,j,k] = consvar_ijk
                 exner[i,j,k] = exner_ijk
                 Phi[i,j] = Phi_up
