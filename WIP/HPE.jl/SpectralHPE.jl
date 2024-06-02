@@ -1,39 +1,23 @@
 # # HPE solver using spherical harmonics for horizontal discretization
 
-using Pkg;
-Pkg.activate(@__DIR__);
+using Pkg; Pkg.activate(@__DIR__)
 using InteractiveUtils
 
 @time_imports begin
-    # lightweight dependencies
-    using MutatingOrNot: void, Void
-    using LoopManagers: VectorizedCPU, MultiThread
     using SIMDMathFunctions
+    using LoopManagers: VectorizedCPU, MultiThread
 
-    using ClimFlowsTestCases:
-        Jablonowski06, testcase, describe, initial_flow, initial_surface
     using CFTimeSchemes: CFTimeSchemes, advance!
-    using ClimFluids: ClimFluids, AbstractFluid, SimpleFluid, IdealPerfectGas
-    using CFPlanets: CFPlanets, ShallowTradPlanet, coriolis
+    using SHTnsSpheres: SHTnsSphere
 
-    using CFDomains: CFDomains, shell, Shell
+    using ClimFluids: ClimFluids, IdealPerfectGas
+    using CFPlanets: CFPlanets, ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, SigmaCoordinate, HPE, diagnostics
+    using ClimFlowsTestCases: Jablonowski06, testcase, describe, initial_flow, initial_surface
 
     import ClimFlowsPlots.SpectralSphere as Plots
-
-    using SHTnsSpheres: SHTnsSphere, analysis_scalar!, analysis_vector!
-    # heavy dependencies
     using GeoMakie, CairoMakie, ColorSchemes
 end
-
-macro skip(args...) ; return nothing ; end
-
-## these "constructors" seem to help with type stability
-vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
-vector_spat(ucolat, ulon) = (; ucolat, ulon)
-HPE_state(mass_spec, uv_spec) = (; mass_spec, uv_spec)
-
-# initial condition from test case
 
 # model setup
 
@@ -61,12 +45,11 @@ function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
     @info "Time step" cmax dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
-    solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
+    solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state0, mutating)
     return model, state, diags, scheme, solver
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
-upscale(x) = x
 
 # main program
 
@@ -91,11 +74,9 @@ params = (
 )
 
 @info "Initializing spherical harmonics..."
-# @time sph = SHTnsSphere(128)
 hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat)
 
 @info "Model setup..."
-
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
@@ -146,6 +127,7 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
         end
         @info "Worker: finished"
     end
+
     # main thread making the movie
     record(fig, "$(@__DIR__)/ulat.mp4", 1:N) do i
         @info "t=$(div(interval*i,3600))h"
