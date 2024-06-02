@@ -7,6 +7,7 @@ using InteractiveUtils
 @time_imports begin
     # lightweight dependencies
     using MutatingOrNot: void, Void
+    using LoopManagers: VectorizedCPU, MultiThread
     using SIMDMathFunctions
 
     using ClimFlowsTestCases:
@@ -16,6 +17,7 @@ using InteractiveUtils
     using CFPlanets: CFPlanets, ShallowTradPlanet, coriolis
 
     using CFDomains: CFDomains, shell, Shell
+    using CFHydrostatics: CFHydrostatics, SigmaCoordinate, HPE, diagnostics
 
     import ClimFlowsPlots.SpectralSphere as Plots
 
@@ -24,98 +26,33 @@ using InteractiveUtils
     using GeoMakie, CairoMakie, ColorSchemes
 end
 
-macro skip(args...)
-    return nothing
-end
-
-include("LagrangianHPE.jl")
-
-struct HPE{Coord, Domain<:Shell, Fluid<:AbstractFluid}
-    vcoord::Coord
-    planet::ShallowTradPlanet{Float64}
-    domain::Domain
-    gas::Fluid
-    fcov::Matrix{Float64} # covariant Coriolis factor = f(lat)*radius^2
-    Phis::Matrix{Float64} # surface geopotential
-    #    hd::HyperDiffusion
-end
-
-function HPE(params, sph::SHTnsSphere, vcoord, geopotential, gas)
-    (; radius, Omega), (; lon, lat) = params, sph
-    planet = ShallowTradPlanet(radius, Omega)
-    f(lon, lat) = coriolis(planet, lon, lat)
-    Phis = geopotential.(lon, lat)
-    return HPE(vcoord, planet, CFDomains.shell(params.nz, sph), gas, f.(lon, lat), Phis)
-end
+macro skip(args...) ; return nothing ; end
 
 ## these "constructors" seem to help with type stability
 vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
 HPE_state(mass_spec, uv_spec) = (; mass_spec, uv_spec)
 
-# initial condition
-
-initial_HPE(model::HPE, case) = initial_HPE(model, model.domain.layout, case)
-initial_HPE(model::HPE, ::CFDomains.HVLayout, case) =
-    initial_HPE_HV(model, CFDomains.nlayer(model.domain), model.domain.layer, case)
-
-function initial_HPE_HV(model, nz, sph::SHTnsSphere, case)
-    mass, ulon, ulat = initial_HPE_HV(model, nz, sph.lon, sph.lat, model.gas, case)
-    mass_spec = analysis_scalar!(void, mass, sph)
-    uv_spec = analysis_vector!(void, vector_spat(-ulat, ulon), sph)
-    HPE_state(mass_spec, uv_spec)
-end
-
-function initial_HPE_HV(model, nz, lon, lat, gas::SimpleFluid, case)
-    # mass[i, j, k, 1] = dry air mass
-    # mass[i, j, k, 2] = mass-weighted conservative variable
-    radius, vcoord = model.planet.radius, model.vcoord
-    consvar = gas(:p, :v).conservative_variable
-    alloc(dims...) = similar(lon, size(lon)..., dims...)
-    mass, ulon, ulat = alloc(nz, 2), alloc(nz), alloc(nz)
-
-    for i in axes(mass, 1), j in axes(mass, 2), k = 1:nz
-        let lon = lon[i, j], lat = lat[i, j]
-            ps, _ = initial_surface(lon, lat, case)
-            p = pressure_level(2k - 1, ps, vcoord) # full level k
-            _, uu, vv = initial_flow(lon, lat, p, case)
-            ulon[i, j, k], ulat[i, j, k] = radius * uu, radius * vv
-            p_lower = pressure_level(2k - 2, ps, vcoord) # lower interface
-            p_upper = pressure_level(2k, ps, vcoord) # upper interface
-            mg = p_lower - p_upper
-            Phi_lower, _, _ = initial_flow(lon, lat, p_lower, case)
-            Phi_upper, _, _ = initial_flow(lon, lat, p_upper, case)
-            v = (Phi_upper - Phi_lower) / mg # dPhi = -v . dp
-            mass[i, j, k, 1] = radius^2 * mg
-            mass[i, j, k, 2] = (radius^2 * mg) * consvar(p, v)
-        end
-    end
-    return mass, ulon, ulat
-end
-
-includet("spectral_modules.jl")
-CFTimeSchemes.tendencies!(dstate, model::HPE, state, scratch, t) =
-    Dynamics.tendencies!(dstate, model, state, scratch, t)
-CFTimeSchemes.scratch_space(model::HPE, state) = Dynamics.scratch_space(model, state)
-function CFTimeSchemes.model_dstate(::HPE, state)
-    sim(x) = similar(x)
-    sim(x::NamedTuple) = map(sim, x)
-    sim(state)
-end
+# initial condition from test case
 
 # model setup
 
 function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
+    mgr = MultiThread(VectorizedCPU())
     case = testcase(choices.TestCase, Float64)
     params = merge(choices, case.params, params)
     gas = params.Fluid(params)
     vcoord = SigmaCoordinate(params.nz, params.ptop)
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
-    model = HPE(params, sph, vcoord, surface_geopotential, gas)
-    state = initial_HPE(model, case)
+    model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
+    state = let
+        init(lon, lat) = initial_surface(lon, lat, case)
+        init(lon, lat, p) = initial_flow(lon, lat, p, case)
+        CFHydrostatics.initial_HPE(init, model)
+    end
 
     # time step based on maximum sound speed
-    diags = Diagnostics.diagnostics()
+    diags = diagnostics(model)
     cmax = let session = open(diags; model, state), uv = session.uv
         maximum(session.sound_speed + @. sqrt(uv.ucolat^2 + uv.ulon^2))
     end
@@ -133,18 +70,13 @@ upscale(x) = x
 
 # main program
 
-@info "Initializing spherical harmonics..."
-# sph = SHTnsSphere(128)
-@time sph = SHTnsSphere(48)
-
-@info "Model setup..."
-
 choices = (
     Fluid = IdealPerfectGas,
     consvar = :temperature,
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
+    nlat = 48
 )
 params = (
     ptop = 100,
@@ -157,6 +89,13 @@ params = (
     courant = 2,
     interval = 6 * 3600, # 6-hour intervals
 )
+
+@info "Initializing spherical harmonics..."
+# @time sph = SHTnsSphere(128)
+hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat)
+
+@info "Model setup..."
+
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
