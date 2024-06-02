@@ -6,7 +6,7 @@ unique!(push!(LOAD_PATH, "$(@__DIR__)/../include/"))
 using InteractiveUtils
 
 const start_time = time()
-toc(str) = "At t=$(time()-start_time)s : $str"
+toc(str, t=round(time()-start_time; digits=2)) = "At t=$t s: $str"
 
 try_import(mod) = (mod in keys(Pkg.project().dependencies)) && @eval import $(Symbol(mod))
 

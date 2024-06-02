@@ -167,7 +167,7 @@ function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
     @info "Time step" umax, cmax, dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
-    solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt, state0, mutating)
+    solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state0, mutating)
     return model, scheme, solver, state0
 end
 
@@ -175,9 +175,10 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 
 # main program
 
-@info toc("Initializing...")
+@info toc("Initializing spherical harmonics...")
+sph = SHTnsSpheres.SHTnsSphere(128)
 
-sph = SHTnsSpheres.SHTnsSphere(512)
+@info toc("Setting up...")
 case = testcase(Williamson91{6}, Float64)
 interval = 3600.0
 model, scheme, solver, state0 = setup(case, sph ; interval)

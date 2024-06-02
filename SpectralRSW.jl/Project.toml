@@ -7,3 +7,11 @@ CookBooks = "7bce7c31-0f61-4fd7-bdaf-6b04abfa2cc7"
 GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
+
+[compat]
+CFTimeSchemes = "0.2"
+ClimFlowsTestCases = "0.1"
+CookBooks = "0.2"
+MutatingOrNot = "0.1"
+SHTnsSpheres = "0.2"
+julia = "1.8"
