@@ -8,11 +8,12 @@ using InteractiveUtils
     using LoopManagers: VectorizedCPU, MultiThread
 
     using CFTimeSchemes: CFTimeSchemes, advance!
+    using CFDomains: SigmaCoordinate
     using SHTnsSpheres: SHTnsSphere
 
     using ClimFluids: ClimFluids, IdealPerfectGas
     using CFPlanets: CFPlanets, ShallowTradPlanet
-    using CFHydrostatics: CFHydrostatics, SigmaCoordinate, HPE, diagnostics
+    using CFHydrostatics: CFHydrostatics, HPE, diagnostics
     using ClimFlowsTestCases: Jablonowski06, testcase, describe, initial_flow, initial_surface
 
     import ClimFlowsPlots.SpectralSphere as Plots
@@ -51,6 +52,20 @@ end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
 
+function vertical_remap(model, state)
+    reshp(x) = reshape(x, size(mass,1), size(mass,2), size(mass,3))
+    sph = model.domain.layer
+    mass = SHTnsSpheres.synthesis_scalar!(void, state.mass_spec, sph)
+    uv = SHTnsSpheres.synthesis_vector!(void, state.uv_spec, sph)
+    now = @views (mass=mass[:,:,:,1], massq=mass[:,:,:,2], ux=uv.ucolat, uy=uv.ulon)
+    remapped = CFHydrostatics.vertical_remap!(nothing, model, void, void, now)
+    mass[:,:,:,1] .= reshp(remapped.mass)
+    mass[:,:,:,2] .= reshp(remapped.massq)
+    mass_spec = SHTnsSpheres.analysis_scalar!(void, mass, sph)
+    uv_spec = SHTnsSpheres.analysis_vector!(void, (ucolat=reshp(remapped.ux), ulon=reshp(remapped.uy)), sph)
+    return (; mass_spec, uv_spec)
+end
+
 # main program
 
 choices = (
@@ -86,7 +101,7 @@ solver! = solver(true) # mutating, non-allocating
 # solver = solver(false) # non-mutating, allocating
 
 @info "Time needed to simulate 1 day ..."
-let ndays = 1
+new_state, t = let ndays = 1
     interval = params.interval
     N = Int(ndays * 24 * 3600 / interval)
     nstep = Int(params.interval / solver!.dt)
@@ -95,7 +110,7 @@ let ndays = 1
     @time advance!(state, solver!, state, 0.0, N * nstep)
 end
 
-@info "Starting simulation."
+@info "Preparing plots..."
 
 diag(state) = transpose(open(diags; model, state).uv.ucolat[:, :, 1])
 diag_obs = Makie.Observable(diag(state0))
@@ -105,7 +120,9 @@ lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
 fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
 
-@time let ndays = 6
+@info "Starting simulation."
+
+@time let ndays = 10
     interval = params.interval
     N = Int(ndays * 24 * 3600 / interval)
 
@@ -123,6 +140,7 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
                 #                uv_spec = vector_spec(uv_spec.spheroidal, toroidal)
                 #                state = RSW_state(gh_spec, uv_spec)
             end
+            state = vertical_remap(model, state)
             put!(ch, diag(state))
         end
         @info "Worker: finished"
