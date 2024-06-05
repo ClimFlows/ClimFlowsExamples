@@ -1,0 +1,8 @@
+[deps]
+LoopManagers = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
+ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
+Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
+SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
+SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
+SIMDMathFunctions = "d22a7203-ad50-4fbc-abc4-d6ac724cca58"
+ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
