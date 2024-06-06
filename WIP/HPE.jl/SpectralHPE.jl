@@ -27,9 +27,9 @@ end
 # model setup
 
 function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
-#    mgr = MultiThread(VectorizedCPU())
+    mgr = MultiThread(VectorizedCPU())
 #    mgr = VectorizedCPU()
-    mgr = MultiThread()
+#    mgr = MultiThread()
     case = testcase(choices.TestCase, Float64)
     params = merge(choices, case.params, params)
     gas = params.Fluid(params)
@@ -63,7 +63,7 @@ function vertical_remap(model, state, scratch=void)
     mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.mass_spat, state.mass_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
     now = @views (mass=mass_spat[:,:,:,1], massq=mass_spat[:,:,:,2], ux=uv_spat.ucolat, uy=uv_spat.ulon)
-    remapped = CFHydrostatics.vertical_remap!(MultiThread(), model, scratch.remapped, scratch, now)
+    remapped = CFHydrostatics.vertical_remap!(model.mgr, model, scratch.remapped, scratch, now)
 
     reshp(x) = reshape(x, size(mass_spat,1), size(mass_spat,2), size(mass_spat,3))
     mass_spat[:,:,:,1] .= reshp(remapped.mass)
@@ -78,14 +78,9 @@ function scratch_remap(diags, model, state)
     mass_spat = open(diags ; model, state).mass
     uv_spat = open(diags ; model, state).uv
     ux = flatten(similar(uv_spat.ulon))
-    uy = similar(ux)
-
-    mass = flatten(mass_spat[:,:,:,1])
-    new_mass, massq, slope, q = (similar(mass) for _ in 1:4)
-
+    uy, mass, new_mass, massq, slope, q = (similar(ux) for _ in 1:6)
     flux = similar(mass, (size(mass,1), size(mass,2)+1))
     fluxq = similar(flux)
-
     return (; mass_spat, uv_spat, flux, fluxq, new_mass, slope, q, remapped=(; mass, massq, ux, uy))
 end
 
@@ -138,9 +133,8 @@ solver! = solver(true) # mutating, non-allocating
 scratch = scratch_remap(diags, model, state0);
 benchmark(model, state0, solver!, params, scratch)
 @time benchmark(model, state0, solver!, params, scratch)
-
 # @profview benchmark(model, state0, solver!, params, scratch)
-#=
+
 @info "Preparing plots..."
 
 diag(state) = transpose(open(diags; model, state).temperature[:, :, 3])
@@ -182,5 +176,3 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
         diag_obs[] = take!(channel)
     end
 end
-
-=#
