@@ -19,37 +19,6 @@ threadinfo()
 
 @info "================== Managed broadcast =================="
 
-# Broadcast machinery (belongs to ManagedLoops)
-
-Base.getindex(mgr::LoopManager, a) = Managed(mgr, a)
-
-struct Managed{A,M,T,N} <: AbstractArray{T,N}
-    mgr::M
-    a::A
-    Managed(mgr::M, a::A) where {M,A}= new{A, M, eltype(a), ndims(a)}(mgr, a)
-end
-Base.ndims(::Type{Managed{A}}) where A = ndims(A)
-Base.size(ma::Managed) = size(ma.a)
-
-function Base.copyto!(ma::Managed, bc::Broadcast.Broadcasted)
-    managed_copyto!(ma.mgr, ma.a, bc)
-    return ma.a
-end
-
-@loops function managed_copyto!(_, a, bc)
-    let irange = eachindex(a)
-        @vec for i in irange
-            @inbounds a[i] = bc[i]
-        end
-    end
-end
-
-Base.getindex(bc::Broadcast.Broadcasted, i::SIMD.VecRange) = call(bc.f, i, bc.args...)
-call(f, i, a) = @inbounds f(a[i])
-call(f, i, a, b) = @inbounds f(a[i], b[i])
-
-# benchmark
-
 bench_bc(a,b,c) = @. a = log(exp(b)*exp(c))
 bench_bc(mgr, a,b,c) = @. mgr[a] = log(exp(b)*exp(c))
 
