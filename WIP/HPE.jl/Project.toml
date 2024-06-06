@@ -18,8 +18,10 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
 SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
 SIMDMathFunctions = "d22a7203-ad50-4fbc-abc4-d6ac724cca58"
+ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
 
 [compat]
+CFDomains = "0.1.5"
 ClimFlowsPlots = "0.1.1"
 ClimFluids = "0.1.1"
 SHTnsSpheres = "0.2.4"
