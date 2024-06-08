@@ -1,6 +1,6 @@
 # # HPE solver using spherical harmonics for horizontal discretization
 
-using Pkg; Pkg.activate(@__DIR__)
+using Pkg; Pkg.activate(@__DIR__); Pkg.status()
 using InteractiveUtils
 
 using ThreadPinning
@@ -13,7 +13,7 @@ pinthreads(:cores)
 
     using CFTimeSchemes: CFTimeSchemes, advance!
     using CFDomains: SigmaCoordinate
-    using SHTnsSpheres: SHTnsSpheres, SHTnsSphere
+    using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
     using ClimFluids: ClimFluids, IdealPerfectGas
     using CFPlanets: CFPlanets, ShallowTradPlanet
@@ -22,12 +22,15 @@ pinthreads(:cores)
 
     import ClimFlowsPlots.SpectralSphere as Plots
     using GeoMakie, CairoMakie, ColorSchemes
+
+    using UnicodePlots: heatmap
 end
 
+Dynamics = Base.get_extension(CFHydrostatics, :SHTnsSpheres_Ext)
 # model setup
 
 function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
-    mgr = MultiThread(VectorizedCPU())
+    mgr = MultiThread(VectorizedCPU(), nthreads)
 #    mgr = VectorizedCPU()
 #    mgr = MultiThread()
     case = testcase(choices.TestCase, Float64)
@@ -118,14 +121,15 @@ params = (
 )
 
 @info "Initializing spherical harmonics..."
-hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat)
+nthreads = max(1,Threads.nthreads()-1)
+hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
+
 @info "Model setup..."
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 @time model, state0, diags, scheme, solver = setup(choices, params, sph)
-
 solver! = solver(true) # mutating, non-allocating
 # solver = solver(false) # non-mutating, allocating
 
@@ -174,5 +178,9 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
     record(fig, "$(@__DIR__)/T850.mp4", 1:N) do i
         @info "t=$(div(interval*i,3600))h"
         diag_obs[] = take!(channel)
+        if mod(params.interval*i, 86400) == 0
+            @info "day $(i/4)"
+            display(heatmap(transpose(diag_obs[])))
+        end
     end
 end
