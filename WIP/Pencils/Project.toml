@@ -1,0 +1,10 @@
+[deps]
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+PencilArrays = "0e08944d-e94e-41b1-9406-dcf66b6a9d2e"
+SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
+
+[compat]
+MPI = "0.20.19"
+PencilArrays = "0.19.3"
+SHTnsSpheres = "0.2.4"
