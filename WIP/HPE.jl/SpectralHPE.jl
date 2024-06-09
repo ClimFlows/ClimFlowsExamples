@@ -9,7 +9,7 @@ pinthreads(:cores)
 @time_imports begin
     using MutatingOrNot: void
     using SIMDMathFunctions
-    using LoopManagers: VectorizedCPU, MultiThread
+    using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, tune
 
     using CFTimeSchemes: CFTimeSchemes, advance!
     using CFDomains: SigmaCoordinate
@@ -29,8 +29,7 @@ end
 Dynamics = Base.get_extension(CFHydrostatics, :SHTnsSpheres_Ext)
 # model setup
 
-function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
-    mgr = MultiThread(VectorizedCPU(), nthreads)
+function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2, mgr = MultiThread(VectorizedCPU(), nthreads))
 #    mgr = VectorizedCPU()
 #    mgr = MultiThread()
     case = testcase(choices.TestCase, Float64)
@@ -55,7 +54,7 @@ function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2)
     @info "Time step" cmax dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
-    solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state0, mutating)
+    solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state, mutating)
     return model, state, diags, scheme, solver
 end
 
@@ -106,7 +105,7 @@ choices = (
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
-    nlat = 64
+    nlat = 128
 )
 params = (
     ptop = 100,
@@ -129,15 +128,23 @@ hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat, nthreads)
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
+
 @time model, state0, diags, scheme, solver = setup(choices, params, sph)
+
+vsize, cpu, simd = 16, PlainCPU(), VectorizedCPU()
+mgrs = [simd, MultiThread(cpu, nt), MultiThread(simd, nt)]
+for mgr in mgrs
+    @info "===== Time needed to simulate 1 day with $mgr ====="
+    model, state0, diags, scheme, solver = setup(choices, params, sph ; mgr)
+    scratch = scratch_remap(diags, model, state0);
+    solver! = solver(true) # mutating, non-allocating
+    benchmark(model, state0, solver!, params, scratch)
+    @time benchmark(model, state0, solver!, params, scratch)
+    # @profview benchmark(model, state0, solver!, params, scratch)
+end
+
 solver! = solver(true) # mutating, non-allocating
 # solver = solver(false) # non-mutating, allocating
-
-@info "Time needed to simulate 1 day ..."
-scratch = scratch_remap(diags, model, state0);
-benchmark(model, state0, solver!, params, scratch)
-@time benchmark(model, state0, solver!, params, scratch)
-# @profview benchmark(model, state0, solver!, params, scratch)
 
 @info "Preparing plots..."
 
@@ -167,7 +174,7 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
                 #                toroidal = model.filter(toroidal, toroidal, model.sph)
                 #                uv_spec = vector_spec(uv_spec.spheroidal, toroidal)
                 #                state = RSW_state(gh_spec, uv_spec)
-                state = vertical_remap(model, state)
+                state = vertical_remap(model, state, scratch)
             end
             put!(ch, diag(state))
         end
