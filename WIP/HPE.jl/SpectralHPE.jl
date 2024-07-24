@@ -13,7 +13,7 @@ pinthreads(:cores)
     using CookBooks:CookBook
 
     using CFTimeSchemes: CFTimeSchemes, advance!
-    using CFDomains: SigmaCoordinate, HyperDiffusion
+    using CFDomains: SigmaCoordinate, HyperDiffusion, Shell, HVLayout
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
     using ClimFluids: ClimFluids, IdealPerfectGas
@@ -57,13 +57,26 @@ end
 
 # the extra parameter `dt` is for benchmarking purposes only
 function run(timeloop::TimeLoop, N, interval, state, scratch ; dt=timeloop.solver.dt)
-    (; solver, model, mutating) = timeloop
+    (; solver, model, dissipation, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), Int(interval / dt)
     for _ = 1:N*nstep
         advance!(state, solver, state, t, 1)
-        state = vertical_remap(model, state, scratch)
+        mass_spec, uv_spec = vertical_remap(model, state, scratch)
+        uv_spec = dissipation(state.uv_spec, state.uv_spec)
+        state = (; mass_spec , uv_spec)
     end
+end
+
+(hd::HyperDiffusion)(storage, coefs) = hyperdiffusion(storage, coefs, hd, hd.domain)
+
+hyperdiffusion(storage, coefs, hd::HyperDiffusion{:vector_curl}, domain::Shell) =
+    hyperdiffusion_shell(storage, coefs, hd, domain.layout, domain.layer)
+
+function hyperdiffusion_shell(storage, coefs, hd::HyperDiffusion{:vector_curl}, ::HVLayout, sph::SHTnsSphere)
+    (; niter, nu), (; laplace, lmax) = hd, sph
+    @. storage.spheroidal = (1-nu*(-laplace/(lmax*(lmax+1)))^niter)*coefs.spheroidal
+    return storage
 end
 
 function vertical_remap(model, state, scratch=void)
@@ -160,7 +173,8 @@ choices = (
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
-    nlat = 64
+    nlat = 128,
+    ndays = 30,
 )
 params = (
     ptop = 100,
@@ -202,7 +216,7 @@ lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
 
 @info "Starting simulation."
-@time let ndays = 10
+@time let ndays = choices.ndays
     scratch = scratch_remap(diags, model, state0);
     (; courant, interval) = params
     dt = max_time_step(info, courant, interval, state0)
