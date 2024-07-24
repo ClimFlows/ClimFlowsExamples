@@ -1,96 +1,116 @@
 # # HPE solver using spherical harmonics for horizontal discretization
 
-using Pkg; Pkg.activate(@__DIR__); Pkg.status()
+using Pkg;
+Pkg.activate(@__DIR__);
+Pkg.status();
 using InteractiveUtils
 
 using ThreadPinning
 pinthreads(:cores)
 
 @time_imports begin
-    using MutatingOrNot: void
     using SIMDMathFunctions
     using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, tune
-    using CookBooks:CookBook
 
-    using CFTimeSchemes: CFTimeSchemes, advance!
-    using CFDomains: SigmaCoordinate, HyperDiffusion
+    using CFTimeSchemes: RungeKutta4, IVPSolver, advance!
+    using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
-    using ClimFluids: ClimFluids, IdealPerfectGas
-    using CFPlanets: CFPlanets, ShallowTradPlanet
+    using ClimFluids: IdealPerfectGas
+    using CFPlanets: ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
-    using ClimFlowsTestCases: Jablonowski06, testcase, describe, initial_flow, initial_surface
+    using ClimFlowsTestCases: Jablonowski06, testcase, initial_flow, initial_surface
 
     import ClimFlowsPlots.SpectralSphere as Plots
-    using GeoMakie, CairoMakie, ColorSchemes
+    using CairoMakie: Makie, record
 
     using UnicodePlots: heatmap
 end
 
-Dynamics = Base.get_extension(CFHydrostatics, :SHTnsSpheres_Ext)
-
 #=====  custom time loop: combines HPE solver, time integration scheme, vertical remap and hyperdiffusion ====#
 
 # everything that does not depend on initial condition
-struct TimeLoopInfo{Sphere, Dyn, Scheme, Filter}
+struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
     sphere::Sphere
     model::Dyn
     scheme::Scheme
     dissipation::Filter
-    diags::CookBook
+    diags::Diags
 end
 
 # some info (essentially the time step) depends on the initial condition
-struct TimeLoop{Dyn, Solver, Filter}
+struct TimeLoop{Dyn,Solver,Filter,Diags}
     model::Dyn
     solver::Solver
     dissipation::Filter
-    diags::CookBook
+    diags::Diags
     mutating::Bool
 end
 
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, dissipation, diags) = info
-    solver = CFTimeSchemes.IVPSolver(scheme, time_step; u0, mutating)
+    solver = IVPSolver(scheme, time_step; u0, mutating)
     return TimeLoop(model, solver, dissipation, diags, mutating)
 end
 
 # the extra parameter `dt` is for benchmarking purposes only
-function run(timeloop::TimeLoop, N, interval, state, scratch ; dt=timeloop.solver.dt)
+function run(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop.solver.dt)
     (; solver, model, dissipation, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), Int(interval / dt)
     for _ = 1:N*nstep
         advance!(state, solver, state, t, 1)
         mass_spec, uv_spec = vertical_remap(model, state, scratch)
-        state = (; mass_spec = dissipation.theta(mass_spec, mass_spec), uv_spec = dissipation.zeta(uv_spec, uv_spec))
+        state = (;
+            mass_spec = dissipation.theta(mass_spec, mass_spec),
+            uv_spec = dissipation.zeta(uv_spec, uv_spec),
+        )
     end
 end
 
-function vertical_remap(model, state, scratch=void)
+function vertical_remap(model, state, scratch = void)
     sph = model.domain.layer
     mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.mass_spat, state.mass_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
-    now = @views (mass=mass_spat[:,:,:,1], massq=mass_spat[:,:,:,2], ux=uv_spat.ucolat, uy=uv_spat.ulon)
-    remapped = CFHydrostatics.vertical_remap!(model.mgr, model, scratch.remapped, scratch, now)
+    now = @views (
+        mass = mass_spat[:, :, :, 1],
+        massq = mass_spat[:, :, :, 2],
+        ux = uv_spat.ucolat,
+        uy = uv_spat.ulon,
+    )
+    remapped =
+        CFHydrostatics.vertical_remap!(model.mgr, model, scratch.remapped, scratch, now)
 
-    reshp(x) = reshape(x, size(mass_spat,1), size(mass_spat,2), size(mass_spat,3))
-    mass_spat[:,:,:,1] .= reshp(remapped.mass)
-    mass_spat[:,:,:,2] .= reshp(remapped.massq)
+    reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(mass_spat, 3))
+    mass_spat[:, :, :, 1] .= reshp(remapped.mass)
+    mass_spat[:, :, :, 2] .= reshp(remapped.massq)
     mass_spec = SHTnsSpheres.analysis_scalar!(state.mass_spec, mass_spat, sph)
-    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, (ucolat=reshp(remapped.ux), ulon=reshp(remapped.uy)), sph)
+    uv_spec = SHTnsSpheres.analysis_vector!(
+        state.uv_spec,
+        (ucolat = reshp(remapped.ux), ulon = reshp(remapped.uy)),
+        sph,
+    )
     return (; mass_spec, uv_spec)
 end
 
 function scratch_remap(diags, model, state)
-    flatten(x) = reshape(x, size(x,1)*size(x,2), size(x,3))
-    mass_spat = open(diags ; model, state).mass
-    uv_spat = open(diags ; model, state).uv
+    flatten(x) = reshape(x, size(x, 1) * size(x, 2), size(x, 3))
+    mass_spat = open(diags; model, state).mass
+    uv_spat = open(diags; model, state).uv
     ux = flatten(similar(uv_spat.ulon))
-    uy, mass, new_mass, massq, slope, q = (similar(ux) for _ in 1:6)
-    flux = similar(mass, (size(mass,1), size(mass,2)+1))
+    uy, mass, new_mass, massq, slope, q = (similar(ux) for _ = 1:6)
+    flux = similar(mass, (size(mass, 1), size(mass, 2) + 1))
     fluxq = similar(flux)
-    return (; mass_spat, uv_spat, flux, fluxq, new_mass, slope, q, remapped=(; mass, massq, ux, uy))
+    return (;
+        mass_spat,
+        uv_spat,
+        flux,
+        fluxq,
+        new_mass,
+        slope,
+        q,
+        remapped = (; mass, massq, ux, uy),
+    )
 end
 
 #============== model setup =============#
@@ -104,10 +124,11 @@ function setup(choices, params, sph; mgr = VectorizedCPU())
     vcoord = SigmaCoordinate(params.nz, params.ptop)
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
     model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
-    scheme = CFTimeSchemes.RungeKutta4(model)
+    scheme = RungeKutta4(model)
     dissip = (
         zeta = HyperDiffusion(model.domain, hd_n, hd_nu, :vector_curl),
-        theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar))
+        theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar),
+    )
     diags = diagnostics(model)
     info = TimeLoopInfo(sph, model, scheme, dissip, diags)
 
@@ -144,15 +165,15 @@ function benchmark(choices, params, sph, mgrs)
         (; courant, interval) = params
         dt = max_time_step(info, courant, interval, state0)
         timeloop = TimeLoop(info, state0, 0.0, true) # zero time step for benchmarking
-        run_benchmark(timeloop, state0, dt, interval ; ndays=0) # compile
+        run_benchmark(timeloop, state0, dt, interval; ndays = 0) # compile
         @time run_benchmark(timeloop, state0, dt, interval, scratch)
         #        @profview run_benchmark(timeloop, state0, dt, interval, scratch)
     end
 end
 
-function run_benchmark(timeloop, state, dt, interval, scratch=void ; ndays=1)
+function run_benchmark(timeloop, state, dt, interval, scratch = void; ndays = 1)
     N = max(1, Int(ndays * 24 * 3600 / interval))
-    run(timeloop, N, interval, state, scratch ; dt)
+    run(timeloop, N, interval, state, scratch; dt)
 end
 
 #=======================  main program =====================#
@@ -181,8 +202,9 @@ params = (
 )
 
 @info "Initializing spherical harmonics..."
-nthreads = max(1,Threads.nthreads()-1)
-(hasproperty(Main, :sph) && sph.nlat==choices.nlat) || @time sph = SHTnsSphere(choices.nlat, nthreads)
+nthreads = max(1, Threads.nthreads() - 1)
+(hasproperty(Main, :sph) && sph.nlat == choices.nlat) ||
+    @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
 
 @info "Model setup..."
@@ -194,7 +216,7 @@ cpu, simd = PlainCPU(), VectorizedCPU(8)
 
 # benchmark(choices, params, sph, [cpu, simd, MultiThread(cpu, nthreads), MultiThread(simd, nthreads)])
 
-info, state0 = setup(choices, params, sph; mgr=simd)
+info, state0 = setup(choices, params, sph; mgr = simd)
 (; diags, model) = info
 
 @info "Preparing plots..."
@@ -209,7 +231,7 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
 
 @info "Starting simulation."
 @time let ndays = choices.ndays
-    scratch = scratch_remap(diags, model, state0);
+    scratch = scratch_remap(diags, model, state0)
     (; courant, interval) = params
     dt = max_time_step(info, courant, interval, state0)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
@@ -229,7 +251,7 @@ fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
     record(fig, "$(@__DIR__)/T850.mp4", 1:N) do i
         @info "t=$(div(interval*i,3600))h"
         diag_obs[] = take!(channel)
-        if mod(params.interval*i, 86400) == 0
+        if mod(params.interval * i, 86400) == 0
             @info "day $(i/4)"
             display(heatmap(transpose(diag_obs[])))
         end
