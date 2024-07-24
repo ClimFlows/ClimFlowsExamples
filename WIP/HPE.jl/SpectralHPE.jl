@@ -13,7 +13,7 @@ pinthreads(:cores)
     using CookBooks:CookBook
 
     using CFTimeSchemes: CFTimeSchemes, advance!
-    using CFDomains: SigmaCoordinate, HyperDiffusion, Shell, HVLayout
+    using CFDomains: SigmaCoordinate, HyperDiffusion
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
     using ClimFluids: ClimFluids, IdealPerfectGas
@@ -63,20 +63,8 @@ function run(timeloop::TimeLoop, N, interval, state, scratch ; dt=timeloop.solve
     for _ = 1:N*nstep
         advance!(state, solver, state, t, 1)
         mass_spec, uv_spec = vertical_remap(model, state, scratch)
-        uv_spec = dissipation(state.uv_spec, state.uv_spec)
-        state = (; mass_spec , uv_spec)
+        state = (; mass_spec = dissipation.theta(mass_spec, mass_spec), uv_spec = dissipation.zeta(uv_spec, uv_spec))
     end
-end
-
-(hd::HyperDiffusion)(storage, coefs) = hyperdiffusion(storage, coefs, hd, hd.domain)
-
-hyperdiffusion(storage, coefs, hd::HyperDiffusion{:vector_curl}, domain::Shell) =
-    hyperdiffusion_shell(storage, coefs, hd, domain.layout, domain.layer)
-
-function hyperdiffusion_shell(storage, coefs, hd::HyperDiffusion{:vector_curl}, ::HVLayout, sph::SHTnsSphere)
-    (; niter, nu), (; laplace, lmax) = hd, sph
-    @. storage.spheroidal = (1-nu*(-laplace/(lmax*(lmax+1)))^niter)*coefs.spheroidal
-    return storage
 end
 
 function vertical_remap(model, state, scratch=void)
@@ -107,16 +95,19 @@ end
 
 #============== model setup =============#
 
-function new_setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2, mgr = VectorizedCPU())
+function setup(choices, params, sph; mgr = VectorizedCPU())
     case = testcase(choices.TestCase, Float64)
     params = merge(choices, case.params, params)
+    hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
     # stuff independent from initial condition
     gas = params.Fluid(params)
     vcoord = SigmaCoordinate(params.nz, params.ptop)
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
     model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
     scheme = CFTimeSchemes.RungeKutta4(model)
-    dissip = HyperDiffusion(model.domain, hd_n, hd_nu, :vector_curl)
+    dissip = (
+        zeta = HyperDiffusion(model.domain, hd_n, hd_nu, :vector_curl),
+        theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar))
     diags = diagnostics(model)
     info = TimeLoopInfo(sph, model, scheme, dissip, diags)
 
@@ -144,25 +135,24 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 
 #============== benchmark ==================#
 
-function new_benchmark(timeloop, state, dt, interval, scratch=void ; ndays=1)
-    N = max(1, Int(ndays * 24 * 3600 / interval))
-    run(timeloop, N, interval, state, scratch ; dt)
-end
-
 function benchmark(choices, params, sph, mgrs)
     for mgr in mgrs
         # NB : spherical harmonics are multithread in all cases !
         @info "===== Time needed to simulate 1 day with $mgr ====="
-        let (info, state0) = new_setup(choices, params, sph; mgr)
-            scratch = scratch_remap(info.diags, info.model, state0)
-            (; courant, interval) = params
-            dt = max_time_step(info, courant, interval, state0)
-            timeloop = TimeLoop(info, state0, 0.0, true) # zero time step for benchmarking
-            new_benchmark(timeloop, state0, dt, interval ; ndays=0) # compile
-            @time new_benchmark(timeloop, state0, dt, interval, scratch)
-    #        @profview new_benchmark(timeloop, state0, dt, interval, scratch)
-        end
+        info, state0 = setup(choices, params, sph; mgr)
+        scratch = scratch_remap(info.diags, info.model, state0)
+        (; courant, interval) = params
+        dt = max_time_step(info, courant, interval, state0)
+        timeloop = TimeLoop(info, state0, 0.0, true) # zero time step for benchmarking
+        run_benchmark(timeloop, state0, dt, interval ; ndays=0) # compile
+        @time run_benchmark(timeloop, state0, dt, interval, scratch)
+        #        @profview run_benchmark(timeloop, state0, dt, interval, scratch)
     end
+end
+
+function run_benchmark(timeloop, state, dt, interval, scratch=void ; ndays=1)
+    N = max(1, Int(ndays * 24 * 3600 / interval))
+    run(timeloop, N, interval, state, scratch ; dt)
 end
 
 #=======================  main program =====================#
@@ -173,7 +163,8 @@ choices = (
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
-    nlat = 128,
+    hyperdiff_n = 8,
+    nlat = 64,
     ndays = 30,
 )
 params = (
@@ -184,6 +175,7 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
+    hyperdiff_nu = 1e-2,
     courant = 1.8,
     interval = 6 * 3600, # 6-hour intervals
 )
@@ -202,7 +194,7 @@ cpu, simd = PlainCPU(), VectorizedCPU(8)
 
 # benchmark(choices, params, sph, [cpu, simd, MultiThread(cpu, nthreads), MultiThread(simd, nthreads)])
 
-info, state0 = new_setup(choices, params, sph; mgr=simd)
+info, state0 = setup(choices, params, sph; mgr=simd)
 (; diags, model) = info
 
 @info "Preparing plots..."
