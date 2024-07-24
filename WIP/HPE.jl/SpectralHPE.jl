@@ -10,9 +10,10 @@ pinthreads(:cores)
     using MutatingOrNot: void
     using SIMDMathFunctions
     using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, tune
+    using CookBooks:CookBook
 
     using CFTimeSchemes: CFTimeSchemes, advance!
-    using CFDomains: SigmaCoordinate
+    using CFDomains: SigmaCoordinate, HyperDiffusion
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
     using ClimFluids: ClimFluids, IdealPerfectGas
@@ -27,38 +28,44 @@ pinthreads(:cores)
 end
 
 Dynamics = Base.get_extension(CFHydrostatics, :SHTnsSpheres_Ext)
-# model setup
 
-function setup(choices, params, sph; hd_n = 8, hd_nu = 1e-2, mgr = MultiThread(VectorizedCPU(), nthreads))
-#    mgr = VectorizedCPU()
-#    mgr = MultiThread()
-    case = testcase(choices.TestCase, Float64)
-    params = merge(choices, case.params, params)
-    gas = params.Fluid(params)
-    vcoord = SigmaCoordinate(params.nz, params.ptop)
-    surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
-    model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
-    state = let
-        init(lon, lat) = initial_surface(lon, lat, case)
-        init(lon, lat, p) = initial_flow(lon, lat, p, case)
-        CFHydrostatics.initial_HPE(init, model)
-    end
+#=====  custom time loop: combines HPE solver, time integration scheme, vertical remap and hyperdiffusion ====#
 
-    # time step based on maximum sound speed
-    diags = diagnostics(model)
-    cmax = let session = open(diags; model, state), uv = session.uv
-        maximum(session.sound_speed + @. sqrt(uv.ucolat^2 + uv.ulon^2))
-    end
-    dt = params.radius * params.courant / cmax / sqrt(sph.lmax * sph.lmax + 1)
-    dt = divisor(dt, params.interval)
-    @info "Time step" cmax dt
-
-    scheme = CFTimeSchemes.RungeKutta4(model)
-    solver(mutating = false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state, mutating)
-    return model, state, diags, scheme, solver
+# everything that does not depend on initial condition
+struct TimeLoopInfo{Sphere, Dyn, Scheme, Filter}
+    sphere::Sphere
+    model::Dyn
+    scheme::Scheme
+    dissipation::Filter
+    diags::CookBook
 end
 
-divisor(dt, T) = T / ceil(Int, T / dt)
+# some info (essentially the time step) depends on the initial condition
+struct TimeLoop{Dyn, Solver, Filter}
+    model::Dyn
+    solver::Solver
+    dissipation::Filter
+    diags::CookBook
+    mutating::Bool
+end
+
+function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
+    (; model, scheme, dissipation, diags) = info
+    solver = CFTimeSchemes.IVPSolver(scheme, time_step; u0, mutating)
+    return TimeLoop(model, solver, dissipation, diags, mutating)
+end
+
+# the extra parameter `dt` is for benchmarking purposes only
+function run(timeloop::TimeLoop, N, interval, state, scratch ; dt=timeloop.solver.dt)
+    (; solver, model, dissipation, mutating) = timeloop
+    @assert mutating # FIXME
+    t, nstep = zero(dt), Int(interval / dt)
+    for _ = 1:N*nstep
+        advance!(state, solver, state, t, 1)
+        mass_spec, uv_spec = vertical_remap(model, state, scratch)
+        state = (; mass_spec = dissipation.theta(mass_spec, mass_spec), uv_spec = dissipation.zeta(uv_spec, uv_spec))
+    end
+end
 
 function vertical_remap(model, state, scratch=void)
     sph = model.domain.layer
@@ -86,18 +93,69 @@ function scratch_remap(diags, model, state)
     return (; mass_spat, uv_spat, flux, fluxq, new_mass, slope, q, remapped=(; mass, massq, ux, uy))
 end
 
-function benchmark(model, state0, solver!, params, scratch=void ; ndays=1)
-    state = deepcopy(state0)
-    interval = params.interval
-    N = Int(ndays * 24 * 3600 / interval)
-    nstep = Int(params.interval / solver!.dt)
-    for iter = 1:N*nstep
-        advance!(state, solver!, state, 0.0, 1)
-        state = vertical_remap(model, state, scratch)
+#============== model setup =============#
+
+function setup(choices, params, sph; mgr = VectorizedCPU())
+    case = testcase(choices.TestCase, Float64)
+    params = merge(choices, case.params, params)
+    hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
+    # stuff independent from initial condition
+    gas = params.Fluid(params)
+    vcoord = SigmaCoordinate(params.nz, params.ptop)
+    surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
+    model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
+    scheme = CFTimeSchemes.RungeKutta4(model)
+    dissip = (
+        zeta = HyperDiffusion(model.domain, hd_n, hd_nu, :vector_curl),
+        theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar))
+    diags = diagnostics(model)
+    info = TimeLoopInfo(sph, model, scheme, dissip, diags)
+
+    # initial condition
+    state = let
+        init(lon, lat) = initial_surface(lon, lat, case)
+        init(lon, lat, p) = initial_flow(lon, lat, p, case)
+        CFHydrostatics.initial_HPE(init, model)
+    end
+
+    return info, state
+end
+
+function max_time_step(info::TimeLoopInfo, courant, interval, state)
+    (; sphere, model, diags) = info
+    # time step based on maximum sound speed and courant number `courant`, which divides `interval`
+    session = open(diags; model, state)
+    uv = session.uv
+    cmax = maximum(session.sound_speed + @. sqrt(uv.ucolat^2 + uv.ulon^2))
+    dt = model.planet.radius * courant / cmax / sqrt(sphere.lmax * sphere.lmax + 1)
+    dt = divisor(dt, interval)
+end
+
+divisor(dt, T) = T / ceil(Int, T / dt)
+
+#============== benchmark ==================#
+
+function benchmark(choices, params, sph, mgrs)
+    for mgr in mgrs
+        # NB : spherical harmonics are multithread in all cases !
+        @info "===== Time needed to simulate 1 day with $mgr ====="
+        info, state0 = setup(choices, params, sph; mgr)
+        scratch = scratch_remap(info.diags, info.model, state0)
+        (; courant, interval) = params
+        dt = max_time_step(info, courant, interval, state0)
+        timeloop = TimeLoop(info, state0, 0.0, true) # zero time step for benchmarking
+        run_benchmark(timeloop, state0, dt, interval ; ndays=0) # compile
+        @time run_benchmark(timeloop, state0, dt, interval, scratch)
+        #        @profview run_benchmark(timeloop, state0, dt, interval, scratch)
     end
 end
 
-# main program
+function run_benchmark(timeloop, state, dt, interval, scratch=void ; ndays=1)
+    N = max(1, Int(ndays * 24 * 3600 / interval))
+    run(timeloop, N, interval, state, scratch ; dt)
+end
+
+#=======================  main program =====================#
 
 choices = (
     Fluid = IdealPerfectGas,
@@ -105,7 +163,9 @@ choices = (
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
-    nlat = 128
+    hyperdiff_n = 8,
+    nlat = 64,
+    ndays = 30,
 )
 params = (
     ptop = 100,
@@ -115,13 +175,14 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
+    hyperdiff_nu = 1e-2,
     courant = 1.8,
     interval = 6 * 3600, # 6-hour intervals
 )
 
 @info "Initializing spherical harmonics..."
 nthreads = max(1,Threads.nthreads()-1)
-hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat, nthreads)
+(hasproperty(Main, :sph) && sph.nlat==choices.nlat) || @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
 
 @info "Model setup..."
@@ -129,22 +190,12 @@ hasproperty(Main, :sph) || @time sph = SHTnsSphere(choices.nlat, nthreads)
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 
-@time model, state0, diags, scheme, solver = setup(choices, params, sph)
+cpu, simd = PlainCPU(), VectorizedCPU(8)
 
-vsize, cpu, simd = 16, PlainCPU(), VectorizedCPU()
-mgrs = [simd, MultiThread(cpu, nt), MultiThread(simd, nt)]
-for mgr in mgrs
-    @info "===== Time needed to simulate 1 day with $mgr ====="
-    model, state0, diags, scheme, solver = setup(choices, params, sph ; mgr)
-    scratch = scratch_remap(diags, model, state0);
-    solver! = solver(true) # mutating, non-allocating
-    benchmark(model, state0, solver!, params, scratch)
-    @time benchmark(model, state0, solver!, params, scratch)
-    # @profview benchmark(model, state0, solver!, params, scratch)
-end
+# benchmark(choices, params, sph, [cpu, simd, MultiThread(cpu, nthreads), MultiThread(simd, nthreads)])
 
-solver! = solver(true) # mutating, non-allocating
-# solver = solver(false) # non-mutating, allocating
+info, state0 = setup(choices, params, sph; mgr=simd)
+(; diags, model) = info
 
 @info "Preparing plots..."
 
@@ -157,25 +208,18 @@ lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
 fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
 
 @info "Starting simulation."
-@time let ndays = 10
-    interval = params.interval
+@time let ndays = choices.ndays
+    scratch = scratch_remap(diags, model, state0);
+    (; courant, interval) = params
+    dt = max_time_step(info, courant, interval, state0)
+    timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
     N = Int(ndays * 24 * 3600 / interval)
 
     # separate thread running the simulation
     channel = Channel(spawn = true) do ch
         state = deepcopy(state0)
-        nstep = Int(params.interval / solver!.dt)
         for iter = 1:N
-            for istep = 1:nstep
-                advance!(state, solver!, state, 0.0, 1)
-                #                state, _ = advance!(void, solver, state, 0.0, 1)
-                #                (; gh_spec, uv_spec) = state
-                #                (; toroidal) = uv_spec
-                #                toroidal = model.filter(toroidal, toroidal, model.sph)
-                #                uv_spec = vector_spec(uv_spec.spheroidal, toroidal)
-                #                state = RSW_state(gh_spec, uv_spec)
-                state = vertical_remap(model, state, scratch)
-            end
+            run(timeloop, 1, interval, state, scratch)
             put!(ch, diag(state))
         end
         @info "Worker: finished"
