@@ -69,7 +69,7 @@ choices = (
     Prec = Float64,
     nz = 30,
     hyperdiff_n = 8,
-    nlat = 64,
+    nlat = 96,
     ndays = 30,
 )
 params = (
@@ -80,7 +80,7 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
-    hyperdiff_nu = 1e-2,
+    hyperdiff_nu = 0.1,
     courant = 1.8,
     interval = 6 * 3600, # 6-hour intervals
 )

@@ -19,7 +19,7 @@ end
 function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop.solver.dt)
     (; solver, model, dissipation, mutating) = timeloop
     @assert mutating # FIXME
-    t, nstep = zero(dt), Int(interval / dt)
+    t, nstep = zero(dt), round(Int, interval / dt)
     for _ = 1:N*nstep
         advance!(state, solver, state, t, 1)
         mass_spec, uv_spec = vertical_remap(model, state, scratch)
@@ -122,22 +122,25 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
 
     # separate thread running the simulation
     channel = Channel(spawn = true) do ch
-        diag(state) = transpose(open(diags; model, state).temperature[:, :, 3])
         state = deepcopy(state0)
         for iter = 1:N
             run_loop(timeloop, 1, interval, state, scratch)
-            put!(ch, diag(state))
+            put!(ch, deepcopy(state))
         end
         @info "Worker: finished"
     end
 
     # main thread
+    tape = typeof(state0)[]
     for i in 1:N
         @info "t=$(div(interval*i,3600))h"
-        diag_t = take!(channel)
+        diag(state) = open(diags; model, state).temperature[:, :, 3]
+        state = take!(channel)
+        push!(tape, state)
         if mod(params.interval * i, 86400) == 0
             @info "day $(i/4)"
-            display(heatmap(transpose(diag_t)))
+            display(heatmap(diag(state)))
         end
     end
+    return tape
 end
