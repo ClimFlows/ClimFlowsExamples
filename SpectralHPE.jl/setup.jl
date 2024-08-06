@@ -22,6 +22,8 @@ pinthreads(:cores)
     using UnicodePlots: heatmap
 end
 
+include("NCARL30.jl")
+
 # everything that does not depend on initial condition
 struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
     sphere::Sphere
@@ -39,7 +41,9 @@ function setup(choices, params, sph; mgr = VectorizedCPU())
     hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
     # stuff independent from initial condition
     gas = params.Fluid(params)
-    vcoord = SigmaCoordinate(params.nz, params.ptop)
+    # vcoord = SigmaCoordinate(params.nz, params.ptop)
+    vcoord = NCARL30(params.nz, params.ptop)
+
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
     model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
     scheme = RungeKutta4(model)
@@ -70,10 +74,10 @@ choices = (
     nz = 30,
     hyperdiff_n = 8,
     nlat = 96,
-    ndays = 30,
+    ndays = 5,
 )
 params = (
-    ptop = 100,
+    ptop = 225.52395239472398,
     Cp = 1000,
     kappa = 2 / 7,
     p0 = 1e5,

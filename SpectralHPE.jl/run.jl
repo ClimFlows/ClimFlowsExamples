@@ -22,10 +22,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop
     t, nstep = zero(dt), round(Int, interval / dt)
     for _ = 1:N*nstep
         advance!(state, solver, state, t, 1)
-        mass_spec, uv_spec = vertical_remap(model, state, scratch)
+        state = vertical_remap(model, state, scratch)
         state = (;
-            mass_spec = dissipation.theta(mass_spec, mass_spec),
-            uv_spec = dissipation.zeta(uv_spec, uv_spec),
+            mass_spec = dissipation.theta(state.mass_spec, state.mass_spec),
+            uv_spec = dissipation.zeta(state.uv_spec, state.uv_spec),
         )
     end
 end
@@ -34,8 +34,8 @@ function vertical_remap(model, state, scratch = void)
     sph = model.domain.layer
     mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.mass_spat, state.mass_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
-    now = @views (
-        mass = mass_spat[:, :, :, 1],
+    now = (
+        mass = mass_spat[:, :, :, 1]*model.planet.radius^-2,
         massq = mass_spat[:, :, :, 2],
         ux = uv_spat.ucolat,
         uy = uv_spat.ulon,
@@ -44,7 +44,7 @@ function vertical_remap(model, state, scratch = void)
         CFHydrostatics.vertical_remap!(model.mgr, model, scratch.remapped, scratch, now)
 
     reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(mass_spat, 3))
-    mass_spat[:, :, :, 1] .= reshp(remapped.mass)
+    mass_spat[:, :, :, 1] .= reshp(remapped.mass)*model.planet.radius^2
     mass_spat[:, :, :, 2] .= reshp(remapped.massq)
     mass_spec = SHTnsSpheres.analysis_scalar!(state.mass_spec, mass_spat, sph)
     uv_spec = SHTnsSpheres.analysis_vector!(
@@ -74,7 +74,6 @@ function scratch_remap(diags, model, state)
         remapped = (; mass, massq, ux, uy),
     )
 end
-
 
 #============== benchmark ==================#
 
@@ -134,7 +133,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
     tape = typeof(state0)[]
     for i in 1:N
         @info "t=$(div(interval*i,3600))h"
-        diag(state) = open(diags; model, state).temperature[:, :, 3]
+        diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
         state = take!(channel)
         push!(tape, state)
         if mod(params.interval * i, 86400) == 0

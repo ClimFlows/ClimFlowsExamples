@@ -33,17 +33,38 @@ var_ref(var) = function(session)
 end
 
 function save(tape, filename = "data.nc"; vars...)
+
     nt = length(tape)
-    for i in 1:nt
-        open(diags; model, state=tape[i]) do session
+    for i in 0:nt
+        @info "Writing state $i"
+        open(diags; model, state=tape[max(1,i)]) do session
             for (name, var) in vars
-                vname = string(name)
-                data = reverse(var(session); dims = 2)
-                (nx, ny) = size(data)
-                i == 1 && NetCDF.nccreate(filename, vname, "lon", nx, "lat", ny, "time", nt)
-                data = reshape(data, (nx,ny,1))
-                ncwrite(data, filename, vname; start = [1, 1, i])
+
+                function write(data::Matrix)
+                    vname = string(name)
+                    (nx, ny) = size(data)
+                    if i==0
+                        NetCDF.nccreate(filename, vname, "lon", nx, "lat", ny, "time", nt)
+                    else
+                        data = reshape(data, (nx,ny,1))
+                        ncwrite(data, filename, vname; start = [1, 1, i])
+                    end
+                end
+
+                function write(data::Array{<:Any,3})
+                    vname = string(name)
+                    (nx, ny, nz) = size(data)
+                    if i == 0
+                        NetCDF.nccreate(filename, vname, "lon", nx, "lat", ny, "lev_$vname", nz, "time", nt)
+                    else
+                        data = reshape(data, (nx,ny,nz,1))
+                        ncwrite(data, filename, vname; start = [1, 1, 1, i])
+                    end
+                end
+
+                write(reverse(var(session); dims = 2))
             end
         end
     end
 end
+
