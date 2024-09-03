@@ -3,14 +3,13 @@ Pkg.activate(@__DIR__);
 Pkg.status();
 using InteractiveUtils
 
-using ThreadPinning
-pinthreads(:cores)
-
 @time_imports begin
+    using ThreadPinning
+    pinthreads(:cores)
     using SIMDMathFunctions
-    using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, tune
+    using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
 
-    using CFTimeSchemes: RungeKutta4, IVPSolver, advance!
+    using CFTimeSchemes: CFTimeSchemes, RungeKutta4, IVPSolver, scratch_space, tendencies!, advance!
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
@@ -21,6 +20,11 @@ pinthreads(:cores)
 
     using UnicodePlots: heatmap
 end
+
+@inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
+@inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
+
+include("NCARL30.jl")
 
 # everything that does not depend on initial condition
 struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
@@ -33,13 +37,15 @@ end
 
 #============== model setup =============#
 
-function setup(choices, params, sph; mgr = VectorizedCPU())
+function setup(choices, params, sph, mgr)
     case = testcase(choices.TestCase, Float64)
     params = merge(choices, case.params, params)
     hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
     # stuff independent from initial condition
     gas = params.Fluid(params)
-    vcoord = SigmaCoordinate(params.nz, params.ptop)
+    # vcoord = SigmaCoordinate(params.nz, params.ptop)
+    vcoord = NCARL30(params.nz, params.ptop)
+
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
     model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
     scheme = RungeKutta4(model)
@@ -70,10 +76,10 @@ choices = (
     nz = 30,
     hyperdiff_n = 8,
     nlat = 96,
-    ndays = 30,
+    ndays = 5,
 )
 params = (
-    ptop = 100,
+    ptop = 225.52395239472398,
     Cp = 1000,
     kappa = 2 / 7,
     p0 = 1e5,
@@ -85,8 +91,14 @@ params = (
     interval = 6 * 3600, # 6-hour intervals
 )
 
-@info "Initializing spherical harmonics..."
+threadinfo()
+
 nthreads = max(1, Threads.nthreads() - 1)
+
+cpu, simd = PlainCPU(), VectorizedCPU(8)
+mgr = MultiThread(simd, nthreads)
+
+@info "Initializing spherical harmonics..."
 (hasproperty(Main, :sph) && sph.nlat == choices.nlat) ||
     @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
@@ -96,7 +108,5 @@ nthreads = max(1, Threads.nthreads() - 1)
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 
-cpu, simd = PlainCPU(), VectorizedCPU(8)
-
-info, state0 = setup(choices, params, sph; mgr = simd)
+info, state0 = setup(choices, params, sph, mgr)
 (; diags, model) = info

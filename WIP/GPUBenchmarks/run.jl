@@ -8,7 +8,7 @@ using Adapt: Adapt, adapt
 using KernelAbstractions
 
 using LoopManagers: PlainCPU, MultiThread, VectorizedCPU, KernelAbstractions_GPU
-using ManagedLoops: ManagedLoops, @loops, @vec, offload, LoopManager, DeviceManager
+using ManagedLoops: ManagedLoops, @loops, @vec, synchronize, LoopManager, DeviceManager
 
 Adapt.adapt(mgr::DeviceManager, x) = adapt(mgr.gpu, x)
 
@@ -41,7 +41,10 @@ function peak(fun::Fun, ops, mgrs ; F=Float32, n=5000, N=n*n) where Fun
     for mgr in mgrs
         (oo, aa,bb,cc) = (adapt(mgr, x) for x in (out, a,b,c))
         t = minimum(1:100) do _
-            @elapsed fun(mgr, oo, aa,bb,cc)
+            @elapsed begin
+                fun(mgr, oo, aa,bb,cc)
+                synchronize(mgr)
+            end
         end
         gflops = ops*N/t*1e-9
         @info fun mgr gflops
