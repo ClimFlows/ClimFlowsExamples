@@ -3,14 +3,13 @@ Pkg.activate(@__DIR__);
 Pkg.status();
 using InteractiveUtils
 
-using ThreadPinning
-pinthreads(:cores)
-
 @time_imports begin
+    using ThreadPinning
+    pinthreads(:cores)
     using SIMDMathFunctions
-    using LoopManagers: PlainCPU, VectorizedCPU, MultiThread, tune
+    using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
 
-    using CFTimeSchemes: RungeKutta4, IVPSolver, advance!
+    using CFTimeSchemes: CFTimeSchemes, RungeKutta4, IVPSolver, scratch_space, tendencies!, advance!
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
@@ -21,6 +20,9 @@ pinthreads(:cores)
 
     using UnicodePlots: heatmap
 end
+
+@inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
+@inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
 
 include("NCARL30.jl")
 
@@ -35,7 +37,7 @@ end
 
 #============== model setup =============#
 
-function setup(choices, params, sph; mgr = VectorizedCPU())
+function setup(choices, params, sph, mgr)
     case = testcase(choices.TestCase, Float64)
     params = merge(choices, case.params, params)
     hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
@@ -89,8 +91,14 @@ params = (
     interval = 6 * 3600, # 6-hour intervals
 )
 
-@info "Initializing spherical harmonics..."
+threadinfo()
+
 nthreads = max(1, Threads.nthreads() - 1)
+
+cpu, simd = PlainCPU(), VectorizedCPU(8)
+mgr = MultiThread(simd, nthreads)
+
+@info "Initializing spherical harmonics..."
 (hasproperty(Main, :sph) && sph.nlat == choices.nlat) ||
     @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
@@ -100,7 +108,5 @@ nthreads = max(1, Threads.nthreads() - 1)
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 
-cpu, simd = PlainCPU(), VectorizedCPU(8)
-
-info, state0 = setup(choices, params, sph; mgr = simd)
+info, state0 = setup(choices, params, sph, mgr)
 (; diags, model) = info

@@ -1,2 +1,4 @@
 Manifest.toml
 *.mp4
+*.nc
+*-checkpoint.jl

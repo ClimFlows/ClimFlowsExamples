@@ -11,7 +11,11 @@ end
 
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, dissipation, diags) = info
-    solver = IVPSolver(scheme, time_step; u0, mutating)
+    if mutating
+        solver = IVPSolver(scheme, time_step, u0, 0.0)
+    else
+        solver = IVPSolver(scheme, time_step)
+    end
     return TimeLoop(model, solver, dissipation, diags, mutating)
 end
 
@@ -20,9 +24,11 @@ function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop
     (; solver, model, dissipation, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
-    for _ = 1:N*nstep
+    for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
-        state = vertical_remap(model, state, scratch)
+        if mod(iter,15)==0
+            state = vertical_remap(model, state, scratch)
+        end
         state = (;
             mass_spec = dissipation.theta(state.mass_spec, state.mass_spec),
             uv_spec = dissipation.zeta(state.uv_spec, state.uv_spec),
@@ -75,28 +81,6 @@ function scratch_remap(diags, model, state)
     )
 end
 
-#============== benchmark ==================#
-
-function benchmark(choices, params, sph, mgrs)
-    for mgr in mgrs
-        # NB : spherical harmonics are multithread in all cases !
-        @info "===== Time needed to simulate 1 day with $mgr ====="
-        info, state0 = setup(choices, params, sph; mgr)
-        scratch = scratch_remap(info.diags, info.model, state0)
-        (; courant, interval) = params
-        dt = max_time_step(info, courant, interval, state0)
-        timeloop = TimeLoop(info, state0, 0.0, true) # zero time step for benchmarking
-        run_benchmark(timeloop, state0, dt, interval; ndays = 0) # compile
-        @time run_benchmark(timeloop, state0, dt, interval, scratch)
-        #        @profview run_benchmark(timeloop, state0, dt, interval, scratch)
-    end
-end
-
-function run_benchmark(timeloop, state, dt, interval, scratch = void; ndays = 1)
-    N = max(1, Int(ndays * 24 * 3600 / interval))
-    run_loop(timeloop, N, interval, state, scratch; dt)
-end
-
 function max_time_step(info::TimeLoopInfo, courant, interval, state)
     (; sphere, model, diags) = info
     # time step based on maximum sound speed and courant number `courant`, which divides `interval`
@@ -109,10 +93,9 @@ end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
 
-#============== benchmark ==================#
-
 function simulation(params, model, diags, state0; ndays=params.ndays)
-    @info "Starting simulation."
+    @info "Starting simulation on $(model.mgr)."
+
     scratch = scratch_remap(diags, model, state0)
     (; courant, interval) = params
     dt = max_time_step(info, courant, interval, state0)
@@ -123,7 +106,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
     channel = Channel(spawn = true) do ch
         state = deepcopy(state0)
         for iter = 1:N
-            run_loop(timeloop, 1, interval, state, scratch)
+            @time run_loop(timeloop, 1, interval, state, scratch)
             put!(ch, deepcopy(state))
         end
         @info "Worker: finished"
@@ -132,7 +115,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
     # main thread
     tape = typeof(state0)[]
     for i in 1:N
-        @info "t=$(div(interval*i,3600))h"
+        @info "t=$(div(interval*(i-1),3600))h"
         diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
         state = take!(channel)
         push!(tape, state)
