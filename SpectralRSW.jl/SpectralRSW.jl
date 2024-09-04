@@ -50,22 +50,7 @@ vector_spec(spheroidal, toroidal) = (; spheroidal, toroidal)
 vector_spat(ucolat, ulon) = (; ucolat, ulon)
 RSW_state(gh_spec, uv_spec) = (; gh_spec, uv_spec)
 
-function CFTimeSchemes.scratch_space((; sph)::RSW, (; gh_spec, uv_spec))
-    spec() = similar(gh_spec)
-    spat() = SHTnsSpheres.similar_spat(gh_spec, sph)
-    vspec() = map(similar, uv_spec)
-    vspat() = SHTnsSpheres.similar_spat(uv_spec, sph)
-    B, zeta, gh = spat(), spat(), spat()
-    flux, uv, qflux = vspat(), vspat(), vspat()
-    B_spec, zeta_spec = spec(), spec()
-    flux_spec, qflux_spec = vspec(), vspec()
-    return (; B, zeta, gh, flux, uv, qflux, B_spec, zeta_spec, flux_spec, qflux_spec)
-end
-
-CFTimeSchemes.model_dstate((; sph)::RSW, (; gh_spec, uv_spec)) =
-    RSW_state(similar(gh_spec), map(similar, uv_spec))
-
-function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
+function CFTimeSchemes.tendencies!(dstate, scratch, model::RSW, state, t)
     # spectral fields are suffixed with _spec
     # vector, spectral = (spheroidal, toroidal)
     # vector, spatial = (ucolat, ulon)
@@ -112,7 +97,8 @@ function CFTimeSchemes.tendencies!(dstate, model::RSW, state, scratch, t)
         (@. duv_spec.toroidal = qflux_spec.toroidal),
     )
 
-    return RSW_state(dgh_spec, duv_spec)
+    scratch = (; B, zeta, gh, flux, uv, qflux, B_spec, zeta_spec, flux_spec, qflux_spec)
+    return RSW_state(dgh_spec, duv_spec), scratch
 end
 
 function vorticity(model, state)
@@ -167,7 +153,8 @@ function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
     @info "Time step" umax, cmax, dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
-    solver(mutating=false) = CFTimeSchemes.IVPSolver(scheme, dt; u0=state0, mutating)
+    solver() = CFTimeSchemes.IVPSolver(scheme, dt)
+    solver(state0) = CFTimeSchemes.IVPSolver(scheme, dt, state0, nothing)
     return model, scheme, solver, state0
 end
 
@@ -199,7 +186,7 @@ lats = bounds_lat(model.sph.lat[:,1]*(180/pi))[1:2:end]
 fig = orthographic(lons, lats, pv; colormap = :berlin)
 
 state = deepcopy(state0)
-solver! = solver(true)
+solver! = solver(state0)
 
 @info toc("Starting simulation.")
 

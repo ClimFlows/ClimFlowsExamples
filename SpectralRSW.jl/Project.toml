@@ -9,7 +9,7 @@ MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
 
 [compat]
-CFTimeSchemes = "0.2"
+CFTimeSchemes = "0.3"
 ClimFlowsTestCases = "0.1"
 CookBooks = "0.2"
 MutatingOrNot = "0.1"
