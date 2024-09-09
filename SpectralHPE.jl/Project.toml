@@ -18,7 +18,7 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [compat]
 CFDomains = "0.2.1"
-CFHydrostatics = "0.3"
+CFHydrostatics = "0.3.2"
 CFPlanets = "0.1"
 CFTimeSchemes = "0.3"
 CFTransport = "0.1.3"

@@ -34,12 +34,12 @@ function time(fun, N)
     fun()
     times = [(@timed fun()).time for _=1:2N]
     sort!(times)
-    return round(sum(times[1:N])/N; digits=6), round(sum(times)/2N; digits=6) 
+    return round(sum(times[1:N])/N; digits=6), round(sum(times)/2N; digits=6)
 end
 
 function show_time(fun, N, nt, single)
     elapsed, _ = time(fun, N)
-    if single==0 
+    if single==0
         single = elapsed
         @time fun()
     end
@@ -50,27 +50,30 @@ end
 function scaling_tendencies(models, u0, N=20)
     du = deepcopy(u0)
     single = 0.0
-    for nt in eachindex(models) 
+    for nt in eachindex(models)
         model = models[nt]
         scratch = scratch_space(model, u0, 0.0)
         single = show_time(N, nt, single) do
             tendencies!(du, scratch, model, u0, 0.0)
         end
+        # @profview tendencies!(du, scratch, model, u0, 0.0)
     end
 end
 
-function scaling_RK4(models, u0, N=3)
+function scaling_RK4(models, u0, N=3, nstep=15)
+    @info "Scaling $nstep RK4 steps."
     single = 0.0
-    for nt in eachindex(models) 
+    for nt in eachindex(models)
         model = models[nt]
         scheme = RungeKutta4(model)
         solver = IVPSolver(scheme, 1.0, u0, 0.0)
         u = deepcopy(u0)
         single = show_time(N, nt, single) do
-            for _ in 1:15
+            for _ in 1:nstep
                 advance!(u, solver, u, 0.0, 1)
             end
         end
+#        @profview advance!(u, solver, u, 0.0, nstep)
     end
 end
 

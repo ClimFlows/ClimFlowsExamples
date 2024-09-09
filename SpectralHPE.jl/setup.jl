@@ -74,7 +74,7 @@ choices = (
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
-    hyperdiff_n = 8,
+    hyperdiff_n = 2,
     nlat = 96,
     ndays = 5,
 )
@@ -86,14 +86,14 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
-    hyperdiff_nu = 0.1,
+    hyperdiff_nu = 0.002,
     courant = 1.8,
     interval = 6 * 3600, # 6-hour intervals
 )
 
 threadinfo()
 
-nthreads = max(1, Threads.nthreads() - 1)
+nthreads = Threads.nthreads()
 
 cpu, simd = PlainCPU(), VectorizedCPU(8)
 mgr = MultiThread(simd, nthreads)

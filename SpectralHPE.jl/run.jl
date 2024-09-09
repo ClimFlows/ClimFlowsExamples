@@ -24,25 +24,27 @@ function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop
     (; solver, model, dissipation, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
+    @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
     for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
         if mod(iter,15)==0
             state = vertical_remap(model, state, scratch)
         end
-        state = (;
-            mass_spec = dissipation.theta(state.mass_spec, state.mass_spec),
-            uv_spec = dissipation.zeta(state.uv_spec, state.uv_spec),
-        )
+        (; mass_air_spec, mass_consvar_spec, uv_spec) = state
+        mass_consvar_spec = dissipation.theta(mass_consvar_spec, mass_consvar_spec)
+        uv_spec = dissipation.zeta(uv_spec, uv_spec)
+        state = (; mass_air_spec, mass_consvar_spec, uv_spec)
     end
 end
 
 function vertical_remap(model, state, scratch = void)
     sph = model.domain.layer
-    mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.mass_spat, state.mass_spec, sph)
+    mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.air, state.mass_air_spec, sph)
+    massq_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.consvar, state.mass_consvar_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
     now = (
-        mass = mass_spat[:, :, :, 1]*model.planet.radius^-2,
-        massq = mass_spat[:, :, :, 2],
+        mass = mass_spat*model.planet.radius^-2,
+        massq = massq_spat,
         ux = uv_spat.ucolat,
         uy = uv_spat.ulon,
     )
@@ -50,27 +52,28 @@ function vertical_remap(model, state, scratch = void)
         CFHydrostatics.vertical_remap!(model.mgr, model, scratch.remapped, scratch, now)
 
     reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(mass_spat, 3))
-    mass_spat[:, :, :, 1] .= reshp(remapped.mass)*model.planet.radius^2
-    mass_spat[:, :, :, 2] .= reshp(remapped.massq)
-    mass_spec = SHTnsSpheres.analysis_scalar!(state.mass_spec, mass_spat, sph)
-    uv_spec = SHTnsSpheres.analysis_vector!(
-        state.uv_spec,
-        (ucolat = reshp(remapped.ux), ulon = reshp(remapped.uy)),
-        sph,
-    )
-    return (; mass_spec, uv_spec)
+    mass_spat .= reshp(remapped.mass)*model.planet.radius^2
+    massq_spat .= reshp(remapped.massq)
+    mass_air_spec = SHTnsSpheres.analysis_scalar!(state.mass_air_spec, mass_spat, sph)
+    mass_consvar_spec = SHTnsSpheres.analysis_scalar!(state.mass_consvar_spec, massq_spat, sph)
+    ucolat, ulon = reshp(remapped.ux), reshp(remapped.uy)
+    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, (;ucolat, ulon), sph)
+    return (; mass_air_spec, mass_consvar_spec, uv_spec)
 end
 
 function scratch_remap(diags, model, state)
     flatten(x) = reshape(x, size(x, 1) * size(x, 2), size(x, 3))
-    mass_spat = open(diags; model, state).mass
-    uv_spat = open(diags; model, state).uv
-    ux = flatten(similar(uv_spat.ulon))
+    flatten(x::NamedTuple) = map(flatten, x)
+
+    uv_spat = open(diags; model, state).uv # convoluted way to allocate spatial 3D fields
+    masses_spat = ( air=similar(uv_spat.ucolat), consvar=similar(uv_spat.ucolat) )
+
+    ux = flatten(similar(uv_spat.ucolat))
     uy, mass, new_mass, massq, slope, q = (similar(ux) for _ = 1:6)
     flux = similar(mass, (size(mass, 1), size(mass, 2) + 1))
     fluxq = similar(flux)
     return (;
-        mass_spat,
+        masses_spat,
         uv_spat,
         flux,
         fluxq,
@@ -94,35 +97,25 @@ end
 divisor(dt, T) = T / ceil(Int, T / dt)
 
 function simulation(params, model, diags, state0; ndays=params.ndays)
-    @info "Starting simulation on $(model.mgr)."
+    diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
 
+    @info "Starting simulation on $(model.mgr)."
     scratch = scratch_remap(diags, model, state0)
     (; courant, interval) = params
     dt = max_time_step(info, courant, interval, state0)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
     N = Int(ndays * 24 * 3600 / interval)
 
-    # separate thread running the simulation
-    channel = Channel(spawn = true) do ch
-        state = deepcopy(state0)
-        for iter = 1:N
-            @time run_loop(timeloop, 1, interval, state, scratch)
-            put!(ch, deepcopy(state))
-        end
-        @info "Worker: finished"
-    end
-
-    # main thread
     tape = typeof(state0)[]
-    for i in 1:N
-        @info "t=$(div(interval*(i-1),3600))h"
-        diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
-        state = take!(channel)
-        push!(tape, state)
-        if mod(params.interval * i, 86400) == 0
-            @info "day $(i/4)"
-            display(heatmap(diag(state)))
+    state = deepcopy(state0)
+        for iter = 1:N
+            @info "t=$(div(interval*(iter-1),3600))h"
+            @time run_loop(timeloop, 1, interval, state, scratch)
+            push!(tape, deepcopy(state))
+            if mod(params.interval * iter, 86400) == 0
+                @info "day $(iter/4)"
+                display(heatmap(diag(state)))
+            end
         end
-    end
     return tape
 end
