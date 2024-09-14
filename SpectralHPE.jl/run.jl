@@ -4,19 +4,20 @@
 struct TimeLoop{Dyn,Solver,Filter,Diags}
     model::Dyn
     solver::Solver
+    remap_period::Int
     dissipation::Filter
     diags::Diags
     mutating::Bool
 end
 
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
-    (; model, scheme, dissipation, diags) = info
+    (; model, scheme, remap_period, dissipation, diags) = info
     if mutating
         solver = IVPSolver(scheme, time_step, u0, 0.0)
     else
         solver = IVPSolver(scheme, time_step)
     end
-    return TimeLoop(model, solver, dissipation, diags, mutating)
+    return TimeLoop(model, solver, remap_period, dissipation, diags, mutating)
 end
 
 # the extra parameter `dt` is for benchmarking purposes only
@@ -27,7 +28,7 @@ function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
     for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
-        if mod(iter,15)==0
+        if mod(iter, timeloop.remap_period)==0
             state = vertical_remap(model, state, scratch)
         end
         (; mass_air_spec, mass_consvar_spec, uv_spec) = state

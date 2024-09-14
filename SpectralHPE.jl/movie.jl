@@ -13,7 +13,7 @@ function movie(model, diags, tape, var ; filename=joinpath(@__DIR__, "movie.mp4"
     diag_obs = Makie.Observable(diag(tape[1]))
     fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
     record(fig, filename, eachindex(tape)) do i
-        @info "frame $i"
+        @info "$filename: frame $i"
         diag_obs[] = diag(tape[i])
     end
 end
@@ -66,5 +66,6 @@ function save(tape, filename = "data.nc"; vars...)
             end
         end
     end
+    NetCDF.ncclose(filename)
 end
 

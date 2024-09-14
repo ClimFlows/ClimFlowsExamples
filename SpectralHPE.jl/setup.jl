@@ -9,7 +9,8 @@ using InteractiveUtils
     using SIMDMathFunctions
     using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
 
-    using CFTimeSchemes: CFTimeSchemes, RungeKutta4, IVPSolver, scratch_space, tendencies!, advance!
+    using CFTimeSchemes: scratch_space, tendencies!, advance!
+    using CFTimeSchemes: CFTimeSchemes, RungeKutta4, KinnmarkGray, IVPSolver
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
@@ -21,6 +22,7 @@ using InteractiveUtils
     using UnicodePlots: heatmap
 end
 
+# let CFTimeSchemes use our multi-thread manager when updating the model state
 @inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
 @inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
 
@@ -31,6 +33,7 @@ struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
     sphere::Sphere
     model::Dyn
     scheme::Scheme
+    remap_period::Int
     dissipation::Filter
     diags::Diags
 end
@@ -48,13 +51,13 @@ function setup(choices, params, sph, mgr)
 
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
     model = HPE(params, mgr, sph, vcoord, surface_geopotential, gas)
-    scheme = RungeKutta4(model)
+    scheme = choices.TimeScheme(model)
     dissip = (
         zeta = HyperDiffusion(model.domain, hd_n, hd_nu, :vector_curl),
         theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar),
     )
     diags = diagnostics(model)
-    info = TimeLoopInfo(sph, model, scheme, dissip, diags)
+    info = TimeLoopInfo(sph, model, scheme, choices.remap_period, dissip, diags)
 
     # initial condition
     state = let
@@ -70,11 +73,13 @@ end
 
 choices = (
     Fluid = IdealPerfectGas,
+    TimeScheme = KinnmarkGray{2,5},
     consvar = :temperature,
     TestCase = Jablonowski06,
     Prec = Float64,
     nz = 30,
     hyperdiff_n = 2,
+    remap_period = 5,
     nlat = 96,
     ndays = 5,
 )
@@ -87,7 +92,7 @@ params = (
     radius = 6.4e6,
     Omega = 7.272e-5,
     hyperdiff_nu = 0.002,
-    courant = 1.8,
+    courant = 4.0,
     interval = 6 * 3600, # 6-hour intervals
 )
 
@@ -103,7 +108,7 @@ mgr = MultiThread(simd, nthreads)
     @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
 
-@info "Model setup..."
+@info "Model setup..." choices params
 
 params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
