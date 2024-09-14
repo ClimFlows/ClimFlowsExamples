@@ -1,0 +1,36 @@
+choices = (
+    mgr = PlainCPU(),
+    precision = Float32,
+    Fluid = IdealPerfectGas,
+    TimeScheme = KinnmarkGray{2,5},
+    consvar = :temperature,
+    TestCase = Jablonowski06,
+    Prec = Float32,
+    meshname = "uni.1deg.mesh.nc",
+    nz = 30,
+    niter_gradrot = 2,
+    hyperdiff_n = 2,
+    remap_period = 5,
+    ndays = 5,
+    nstep_dyn = 6,
+    periods = 240,
+    lats = -89:2:89,
+    lons = 1:2:359,
+    outputs = (:ulon, :ulat),
+    filename = "VoronoiHPE.nc",
+)
+
+params = (
+    nu_gradrot = 1e-16,
+    hyperdiff_nu = 0.002,
+    courant = 4.0,
+    ptop = 225.52395239472398,
+    Cp = 1000,
+    kappa = 2 / 7,
+    p0 = 1e5,
+    T0 = 300,
+    radius = 6.4e6,
+    Omega = 7.272e-5,
+    hours_per_period = 1,
+    interval = 6 * 3600, # 6-hour intervals
+)
