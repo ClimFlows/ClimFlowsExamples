@@ -10,7 +10,7 @@ ClimFlowsTestCases = "55a4ed1b-ebae-44a5-bd1f-98d158431b8a"
 NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
 
 [compat]
-CFDomains = "0.1.2"
+CFDomains = "0.2"
 CFPlanets = "0.1"
 CFShallowWaters = "0.1"
 CFTimeSchemes = "0.2"
