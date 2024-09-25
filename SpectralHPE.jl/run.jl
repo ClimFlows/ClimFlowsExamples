@@ -22,13 +22,13 @@ end
 
 # the extra parameter `dt` is for benchmarking purposes only
 function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop.solver.dt)
-    (; solver, model, dissipation, mutating) = timeloop
+    (; solver, model, dissipation, remap_period, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
     for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
-        if mod(iter, timeloop.remap_period)==0
+        if remap_period>0 && mod(iter, remap_period)==0
             state = vertical_remap(model, state, scratch)
         end
         (; mass_air_spec, mass_consvar_spec, uv_spec) = state
@@ -107,7 +107,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
     N = Int(ndays * 24 * 3600 / interval)
 
-    tape = typeof(state0)[]
+    tape = [state0]
     state = deepcopy(state0)
         for iter = 1:N
             @info "t=$(div(interval*(iter-1),3600))h"

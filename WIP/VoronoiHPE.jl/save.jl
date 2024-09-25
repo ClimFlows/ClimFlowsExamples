@@ -1,7 +1,7 @@
 function save(outputs, tape, filename)
     nt = length(tape)
     for i in 1:nt
-        @info "Writing state $i"
+        @info "Writing state $i to $filename"
         outs = outputs(tape[i])
         if i==1
             for (name, data) in outs
@@ -10,8 +10,8 @@ function save(outputs, tape, filename)
                     ny, nx = size(data)
                     nccreate(filename, vname, "lon", nx, "lat", ny, "time", nt)
                 else
-                    nz, ny, nx = size(data)
-                    nccreate(filename, vname, "lon", nx, "lat", ny, "lev", nz, "time", nt)
+                    ny, nx, nz = size(data)
+                    nccreate(filename, vname, "lon", nx, "lat", ny, "lev_$vname", nz, "time", nt)
                 end
             end
         end
@@ -24,10 +24,15 @@ function save(outputs, tape, filename)
                 data = reshape(data, (nx,ny,1))
                 ncwrite(data, filename, vname; start = [1, 1, i])
             else
-                data = permutedims(data, (3,2,1))
+                data = permutedims(data, (2,1,3))
                 nx, ny, nz = size(data)
                 data = reshape(data, (nx,ny,nz,1))
-                ncwrite(data, filename, vname; start = [1, 1, 1, i])
+                try
+                    ncwrite(data, filename, vname; start = [1, 1, 1, i])
+                catch
+                    @error "Error while writing field $vname into $filename." size(data)
+                    rethrow()
+                end
             end
         end
     end

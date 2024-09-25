@@ -113,8 +113,8 @@ diagnose_pv(diags, state) = CFDomains.primal_from_dual(max.(0, open(diags; state
 
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-14
 Float = Float32
-periods, hours_per_period = 240, Float(1)
-sphere = VoronoiSphere(DYNAMICO_reader(ncread, "uni.1deg.mesh.nc") ; prec=Float)
+periods, hours_per_period = 60, Float(4)
+sphere = VoronoiSphere(DYNAMICO_reader(ncread, meshname) ; prec=Float)
 @info sphere
 
 model, diags, state0, solver, nstep, dt = setup_RSW(sphere; nu_gradrot, courant = 1.5, interval=3600*hours_per_period);
@@ -122,7 +122,7 @@ solver! = solver(true)
 @info "Macro time step = $(solver!.dt) s"
 @info "Interval = $(3600*hours_per_period) s"
 
-pv = Makie.Observable(diagnose_pv(diags, state0))
+pv = CairoMakie.Observable(diagnose_pv(diags, state0))
 
 fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
 # fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
@@ -130,13 +130,13 @@ fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-
 
 let future = deepcopy(state0)
     record(fig, "$(@__DIR__)/PV.mp4", 1:periods) do hour
-        @info "Hour $hour / $periods"
+        @info "Hour $(hour*hours_per_period) / $(periods*hours_per_period)"
         @time advance!(future, solver!, future, zero(Float), nstep)
         pv[] = diagnose_pv(diags, future)
     end
 end
 
-# pure time integration without the overhead of the animation
+@info "Pure time integration without the overhead of the animation:"
 @time let future = deepcopy(state0)
     for _ in 1:periods
         advance!(future, solver!, future, zero(Float), nstep)

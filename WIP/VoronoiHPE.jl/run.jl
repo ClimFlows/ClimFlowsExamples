@@ -1,78 +1,75 @@
-# ## Setup solver
-
-# ## Custom IVP solver splitting dynamics and filtering (e.g. hyperdiffusion)
-struct MySolver{DynSolver,Dissip,F,S}
-    dynsolver::DynSolver
-    dissip::Dissip
-    nstep::Int
-    dt::F # macro time-step
-    scratch::S
+struct TimeLoop{Dyn,Solver,Diags}
+    model::Dyn
+    solver::Solver
+    remap_period::Int
+    diags::Diags
+    mutating::Bool
 end
 
-function MySolver(dyn_scheme, dissip, nstep, dt; u0 = nothing, mutating = false)
-    solver = CFTimeSchemes.IVPSolver(dyn_scheme, dt; u0, mutating)
-    scratch = CFDomains.scratch_space(dissip, u0.ucov)
-    MySolver(solver, dissip, nstep, dt * nstep, scratch)
-end
-
-function filter_ucov(out, dissip, (; ghcov, ucov), dt, scratch)
-    ucov_out = CFDomains.hyperdiff!(out.ucov, ucov, dissip, dissip.domain, dt, scratch, nothing)
-    ghcov_out = @. out.ghcov = ghcov
-    return (ghcov=ghcov_out, ucov=ucov_out)
-end
-
-"""
-    future, t = advance!(future, solver, present, t, N)
-    future, t = advance!(void, solver, present, t, N)
-"""
-function advance!(storage, solver::MySolver, state::State, t, N::Int) where State
-    (; dynsolver, dissip, nstep, dt, scratch) = solver
-    @assert N>0
-    @assert typeof(t)==typeof(dt)
-    state, t = advance!(storage, dynsolver, state, t, nstep)
-    state = filter_ucov(storage, dissip, state, dt, scratch)
-    for i=2:N
-        state, t = advance!(storage, dynsolver, state, t, nstep)
-        state = filter_ucov(storage, dissip, state, dt, scratch)
+function TimeLoop(scheme, time_step, remap_period, diags, u0, mutating=true)
+    if mutating
+        solver = IVPSolver(scheme, time_step, u0, 0.0)
+    else
+        solver = IVPSolver(scheme, time_step)
     end
-    return state, t
+    return TimeLoop(scheme.model, solver, remap_period, diags, mutating)
 end
 
-function solver(choices, params, model, state0)
-    (; precision, TestCase) = choices
-    ## physical parameters needed to run the model
-    testcase = CFTestCases.testcase(TestCase, precision)
-    @info CFTestCases.describe(testcase)
-    (; R0, Omega, gH0) = testcase.params
+function max_time_step(model, diags, courant, interval, state)
+    # time step based on maximum sound speed and courant number `courant`, which divides `interval`
+    session = open(diags; model, state)
+    ke = session.kinetic_energy_i
+    T, p = session.temperature_i, session.pressure_i
+    sound_speed = model.gas(:p, :T).sound_speed
+    cmax = maximum(@. sound_speed(p,T) + sqrt(2*ke))
+    dx = model.planet.radius * CFDomains.laplace_dx(model.domain.layer)
+    dt = dx * courant / cmax
+    final_dt = divisor(dt, interval)
+    @info "Time step:" cmax dx dt interval final_dt
+    return final_dt
+end
 
-    ## numerical parameters
-    @time dx = R0 * CFDomains.laplace_dx(sphere)
-    @info "Effective mesh size dx = $(round(dx/1e3)) km"
-    dt_dyn = Float(courant * dx / sqrt(gH0))
-    @info "Maximum dynamics time step = $(round(dt_dyn)) s"
+divisor(dt, T) = T / ceil(Int, T / dt)
 
-    nstep = ceil(Int, interval / (dt_dyn * nstep_dyn))
-    dt = interval / nstep # macro time step, divides 'interval'
-    dt_dyn = dt / nstep_dyn
-    @info "Adjusted dynamics time step = $dt_dyn s"
-    @info "Macro time step = $dt s"
+# the extra parameter `dt` is for benchmarking purposes only
+function run_loop(timeloop::TimeLoop, N, interval, state; dt = timeloop.solver.dt)
+    (; solver, remap_period, mutating) = timeloop
+    @assert mutating # FIXME
+    _, scratch = CFHydrostatics.RemapVoronoi.remap!(void, void, model, state)
+    t, nstep = zero(dt), round(Int, interval / dt)
+    @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
+    GC.gc()
+    for iter = 1:N*nstep
+        advance!(state, solver, state, t, 1)
+        if mod(iter, remap_period) ==0
+            CFHydrostatics.RemapVoronoi.remap!(state, scratch, model, state)
+        end
+    end
+end
 
-    ## model setup
-    planet = CFPlanets.ShallowTradPlanet(R0, Omega)
-    dynamics = CFShallowWaters.RSW(planet, sphere)
-    dissip = HyperDiffusion(sphere, niter_gradrot, nu_gradrot, :vector_curl)
+function simulation(choices, params, model, diags, to_lonlat, state0; ndays=choices.ndays)
+    diag(state) = open(diags; model, state, to_lonlat).surface_pressure
 
-    ## initial condition & standard diagnostics
-    state0 = dynamics.initialize(CFTestCases.initial_flow, testcase)
-    diags = dynamics.diagnostics()
-    @info diags
+    @info "Starting simulation on $(model.mgr)."
+    params = rmap(choices.precision, params)
+    (; courant, interval) = params
+    N = Int(ndays * 24 * 3600 / interval)
+    dt = max_time_step(model, diags, courant, interval, state0)
+    timeloop = TimeLoop(choices.TimeScheme(model), dt, choices.remap_period, diags, state0, true) # mutating, non-allocating
 
-    # split time integration
-    dyn_scheme = Scheme(dynamics)
-    split_solver(mutating = false) =
-        MySolver(dyn_scheme, dissip, nstep_dyn, dt_dyn; u0 = state0, mutating)
-    dyn_solver(mutating = false) =
-        CFTimeSchemes.IVPSolver(dyn_scheme, dt_dyn; u0 = state0, mutating) # unused
+    @info "Macro time step = $(timeloop.solver.dt) s"
+    @info "Interval = $interval s"
 
-    return dynamics, diags, state0, split_solver, nstep, dt
+    tape = [state0]
+    state = deepcopy(state0)
+        for iter = 1:N
+            @info "t=$(div(interval*(iter-1),3600))h"
+            @time run_loop(timeloop, 1, interval, state)
+            push!(tape, deepcopy(state))
+            if mod(params.interval * iter, 24*3600) == 0
+                @info "day $(params.interval * iter/86400)"
+                display(heatmap(diag(state)))
+            end
+        end
+    return tape
 end

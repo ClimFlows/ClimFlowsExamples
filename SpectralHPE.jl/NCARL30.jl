@@ -1,8 +1,8 @@
 using CFDomains
 
-function NCARL30(nz, ptop)
+function NCARL30(nz, ptop::Float) where Float
 
-    hyai = [
+    hyai = Float[
         0,
         0,
         0.00397881818935275,
@@ -36,7 +36,7 @@ function NCARL30(nz, ptop)
         0.00225523952394724,
     ]
 
-    hybi = [
+    hybi = Float[
         1,
         0.985112190246582,
         0.963559806346893,
@@ -70,7 +70,7 @@ function NCARL30(nz, ptop)
         0,
     ]
 
-    hyam = [
+    hyam = Float[
         0,
         0.00198940909467637,
         0.00625495356507599,
@@ -103,7 +103,7 @@ function NCARL30(nz, ptop)
         0.00364346569404006,
     ]
 
-    hybm = [
+    hybm = Float[
         0.992556095123291,
         0.974335998296737,
         0.951230525970459,
@@ -136,13 +136,13 @@ function NCARL30(nz, ptop)
         0,
     ]
 
-    P0 = 1e5
+    P0 = Float(1e5)
 
     @assert nz==30
-    @info "NCARL30" ptop P0*hyai[end]
+#    @info "NCARL30" ptop P0*hyai[end]
     @assert ptop ≈ P0*hyai[end]
 
-    return HybridCoordinate{Float64, 30}(ptop, P0*interleave(hyai, hyam), interleave(hybi, hybm))
+    return CFDomains.HybridCoordinate{Float, 30}(ptop, P0*interleave(hyai, hyam), interleave(hybi, hybm))
 end
 
 function interleave(i,m)
@@ -152,21 +152,6 @@ function interleave(i,m)
         push!(v, i[j+1]) # upper interface
     end
     return v
-end
-
-struct HybridCoordinate{F, N} <: CFHydrostatics.CFDomains.PressureCoordinate{N}
-    ptop:: F
-    a::Vector{F}
-    b::Vector{F}
-end
-
-CFDomains.pressure_level(k, ps, vc::HybridCoordinate) = vc.a[k+1] + ps*vc.b[k+1]
-
-function CFDomains.mass_level(k, masstot, vc::HybridCoordinate) # k==1 for first full level, k==3 for second full level
-    ps = masstot+vc.ptop
-    p_down = vc.a[k] + ps*vc.b[k]
-    p_up = vc.a[k+2] + ps*vc.b[k+2]
-    return p_down-p_up
 end
 
 function write_apbp(choices, model)
