@@ -5,7 +5,9 @@ using InteractiveUtils
 
 @time_imports begin
     using ThreadPinning
-    pinthreads(:cores)
+#    pinthreads(:cores)
+    pinthreads([0, 2])
+    
     using SIMDMathFunctions
     using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
 

@@ -142,16 +142,7 @@ function NCARL30(nz, ptop::Float) where Float
 #    @info "NCARL30" ptop P0*hyai[end]
     @assert ptop ≈ P0*hyai[end]
 
-    return CFDomains.HybridCoordinate{Float, 30}(ptop, P0*interleave(hyai, hyam), interleave(hybi, hybm))
-end
-
-function interleave(i,m)
-    v = [i[1]] # first interface
-    for j in eachindex(m)
-        push!(v, m[j]) # full level
-        push!(v, i[j+1]) # upper interface
-    end
-    return v
+    return CFDomains.HybridCoordinate(ptop, P0*hyai, P0*hyam, hybi, hybm)
 end
 
 function write_apbp(choices, model)
