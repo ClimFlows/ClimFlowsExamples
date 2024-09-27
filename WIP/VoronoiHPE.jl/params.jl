@@ -2,7 +2,7 @@
 outputs = (:Omega, :surface_pressure, :temperature)
 
 choices = (
-    mgr = MultiThread(VectorizedCPU(16)), # PlainCPU(), # VectorizedCPU(8),
+    mgr = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     precision = Float32,
     coordinate = NCARL30, # SigmaCoordinate
     Fluid = IdealPerfectGas,
@@ -10,16 +10,14 @@ choices = (
     consvar = :temperature,
     TestCase = Jablonowski06,
     Prec = Float64,
-    meshname = "uni.1deg.mesh.nc",
+    meshname = "uni.2deg.mesh.nc",
     compare_to_spectral = false,
     nlat = 64, # for the spectral model
     nz = 30,
     niter_gradrot = 2,
     hyperdiff_n = 2,
     remap_period = 4, # number of RK time steps between two remaps
-    ndays = 10,
-    nstep_dyn = 6,
-    periods = 240,
+    ndays = 3,
     filename = "VoronoiHPE",
     outputs
 )

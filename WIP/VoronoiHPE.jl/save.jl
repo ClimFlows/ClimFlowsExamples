@@ -1,3 +1,7 @@
+module Save
+
+using NetCDF
+
 function save(outputs, tape, filename)
     nt = length(tape)
     for i in 1:nt
@@ -38,3 +42,7 @@ function save(outputs, tape, filename)
     end
     ncclose(filename)
 end
+
+end
+
+using .Save: save

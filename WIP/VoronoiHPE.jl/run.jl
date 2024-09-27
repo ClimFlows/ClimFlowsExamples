@@ -22,7 +22,7 @@ function max_time_step(model, diags, courant, interval, state)
     T, p = session.temperature_i, session.pressure_i
     sound_speed = model.gas(:p, :T).sound_speed
     cmax = maximum(@. sound_speed(p,T) + sqrt(2*ke))
-    dx = model.planet.radius * CFDomains.laplace_dx(model.domain.layer)
+    dx = model.planet.radius * CFDomains.laplace_dx(model.domain.layer, model.mgr)
     dt = dx * courant / cmax
     final_dt = divisor(dt, interval)
     @info "Time step:" cmax dx dt interval final_dt
@@ -34,6 +34,7 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 # the extra parameter `dt` is for benchmarking purposes only
 function run_loop(timeloop::TimeLoop, N, interval, state; dt = timeloop.solver.dt)
     (; solver, remap_period, mutating) = timeloop
+    model = solver.scheme.model
     @assert mutating # FIXME
     _, scratch = CFHydrostatics.RemapVoronoi.remap!(void, void, model, state)
     t, nstep = zero(dt), round(Int, interval / dt)
@@ -47,7 +48,7 @@ function run_loop(timeloop::TimeLoop, N, interval, state; dt = timeloop.solver.d
     end
 end
 
-function simulation(choices, params, model, diags, to_lonlat, state0; ndays=choices.ndays)
+function simulation(save, choices, params, model, diags, to_lonlat, state0; ndays=choices.ndays)
     diag(state) = open(diags; model, state, to_lonlat).surface_pressure
 
     @info "Starting simulation on $(model.mgr)."
@@ -60,12 +61,11 @@ function simulation(choices, params, model, diags, to_lonlat, state0; ndays=choi
     @info "Macro time step = $(timeloop.solver.dt) s"
     @info "Interval = $interval s"
 
-    tape = [state0]
     state = deepcopy(state0)
         for iter = 1:N
             @info "t=$(div(interval*(iter-1),3600))h"
             @time run_loop(timeloop, 1, interval, state)
-            push!(tape, deepcopy(state))
+            save(state)
             if mod(params.interval * iter, 24*3600) == 0
                 @info "day $(params.interval * iter/86400)"
                 display(heatmap(diag(state)))

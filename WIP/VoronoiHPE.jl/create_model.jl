@@ -1,11 +1,11 @@
 model, diags, state0 = let params = rmap(choices.precision, params)
     reader = DYNAMICO_reader(ncread, choices.meshname)
     vsphere = VoronoiSphere(reader; prec = choices.precision)
+    @info vsphere
     setup(vsphere, choices, params)
 end;
 
 vsphere = model.domain.layer
-@info vsphere
 
 if choices.compare_to_spectral
 
@@ -59,32 +59,7 @@ else
         permute(data::Matrix) = data
         interp =
             ClimFlowsPlots.SphericalInterpolations.lonlat_interp(vsphere, lons, lats)
-        permute ∘ interp
+        permute ∘ interp ∘ Array
     end
 
 end
-
-#=
-# save initial state to NetCDF
-include("save.jl")
-save([state0], "$(choices.filename).init.nc") do state
-    session = open(diags; model, to_lonlat, state)
-    return ((sym, getproperty(session, sym)) for sym in choices.outputs)
-end
-
-# benchmark tendencies!
-
-versioninfo()
-dstate, scratch_HV = CFHydrostatics.Voronoi.Dynamics.tendencies_HV!(void, void, model, state0, 0);
-
-for mgr in (PlainCPU(), VectorizedCPU(), MultiThread(VectorizedCPU()))
-    model_perf = CFHydrostatics.HPE(mgr, model.vcoord, model.planet, model.domain, model.gas, model.fcov, model.Phis);
-    @info "tendencies_HV! on $mgr"
-    CFHydrostatics.Voronoi.Dynamics.tendencies_HV!(dstate, scratch_HV, model_perf, state0, 0);
-    display(@benchmark CFHydrostatics.Voronoi.Dynamics.tendencies_HV!($dstate, $scratch_HV, $model_perf, $state0, 0);)
-    @info "tendencies! on $mgr"
-    CFHydrostatics.Voronoi.Dynamics.tendencies!(dstate, scratch_HV, model_perf, state0, 0);
-    display(@benchmark CFHydrostatics.Voronoi.Dynamics.tendencies!($dstate, $scratch_HV, $model_perf, $state0, 0);)
-end
-
-=#
