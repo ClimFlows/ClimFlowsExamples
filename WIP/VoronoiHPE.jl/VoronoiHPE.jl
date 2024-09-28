@@ -21,6 +21,7 @@ include("run.jl")
 
 tape = [state0]
 if choices.try_gpu && oneAPI.functional()
+    oneAPI.versioninfo()
     cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), oneArray)
     simulation(choices, params, model |> gpu, diags, to_lonlat, state0 |> gpu) do state_gpu
         push!(tape, state_gpu |> cpu)
