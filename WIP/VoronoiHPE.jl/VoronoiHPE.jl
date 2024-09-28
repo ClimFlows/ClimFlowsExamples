@@ -11,21 +11,28 @@ using InteractiveUtils
 include("setup.jl")
 include("../../SpectralHPE.jl/NCARL30.jl")
 include("params.jl")
+
+# stop as early as possible if output file is already present
+ncfile = Base.Filesystem.abspath("$(choices.filename).nc")
+@assert !Base.Filesystem.ispath(ncfile) "Output file $ncfile exists, please delete/move it and re-run."
+
 include("create_model.jl")
 include("run.jl")
 
-gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), oneArray)
-model_gpu = model |> gpu
-state0_gpu = state0 |> gpu
 tape = [state0]
-simulation(choices, params, model_gpu, diags, to_lonlat, state0_gpu) do state_gpu
-    push!(tape, state_gpu |> PlainCPU())
-end;
-
-# tape = simulation(choices, params, model, diags, to_lonlat, state0);
+if choices.try_gpu && oneAPI.functional()
+    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), oneArray)
+    simulation(choices, params, model |> gpu, diags, to_lonlat, state0 |> gpu) do state_gpu
+        push!(tape, state_gpu |> cpu)
+    end;
+else
+    simulation(choices, params, model, diags, to_lonlat, state0) do state
+        push!(tape, state)
+    end
+end
 
 include("save.jl")
-save(tape, "$(choices.filename).nc") do state
+@time save(tape, ncfile) do state
     session = open(diags; model, to_lonlat, state)
     return ((sym, getproperty(session, sym)) for sym in choices.outputs)
 end

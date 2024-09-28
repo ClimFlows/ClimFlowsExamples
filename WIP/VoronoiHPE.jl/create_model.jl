@@ -30,7 +30,7 @@ if choices.compare_to_spectral
         permute(data::Matrix) = data
         interp =
             ClimFlowsPlots.SphericalInterpolations.lonlat_interp(vsphere, lons, lats)
-        permute ∘ interp
+        permute ∘ interp ∘ Array
     end
 
     let

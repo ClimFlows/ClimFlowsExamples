@@ -52,7 +52,7 @@ function setup(sphere, choices, params)
     vcoord = choices.coordinate(params.nz, params.ptop)
 
     surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
-    model = HPE(params, choices.mgr, sphere, vcoord, surface_geopotential, gas)
+    model = HPE(params, choices.cpu, sphere, vcoord, surface_geopotential, gas)
 
     ## initial condition & standard diagnostics
     state = let
