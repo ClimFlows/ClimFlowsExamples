@@ -1,36 +1,43 @@
+# choices is for discrete parameters, while params is for continuous parameters (floats)
+
 choices = (
-    mgr = PlainCPU(),
+    # computing
+    try_gpu = true,
+    compare_to_spectral = true,
+    cpu = MultiThread(VectorizedCPU(16)), # PlainCPU(), # VectorizedCPU(8),
     precision = Float32,
-    Fluid = IdealPerfectGas,
-    TimeScheme = KinnmarkGray{2,5},
-    consvar = :temperature,
-    TestCase = Jablonowski06,
-    Prec = Float32,
+    # numerics
     meshname = "uni.1deg.mesh.nc",
+    coordinate = NCARL30, # SigmaCoordinate
     nz = 30,
-    niter_gradrot = 2,
-    hyperdiff_n = 2,
-    remap_period = 5,
-    ndays = 5,
-    nstep_dyn = 6,
-    periods = 240,
-    lats = -89:2:89,
-    lons = 1:2:359,
-    outputs = (:ulon, :ulat),
-    filename = "VoronoiHPE.nc",
+    nlat = 64, # for the spectral model
+    consvar = :temperature,
+    TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
+    remap_period = 4, # number of RK time steps between two remaps
+    # physics
+    Fluid = IdealPerfectGas,
+    TestCase = Jablonowski06,
+    # simulation
+    ndays = 10,
+    filename = "VoronoiHPE",
+    outputs = (:Omega, :surface_pressure, :temperature),
+    # outputs = (:Phi_dot, :Omega, :ulon, :ulat, :dulat, :surface_pressure, :temperature, :pressure, :geopotential),
 )
 
 params = (
-    nu_gradrot = 1e-16,
-    hyperdiff_nu = 0.002,
+    # numerics
     courant = 4.0,
-    ptop = 225.52395239472398,
-    Cp = 1000,
+    # physics
+    radius = 6.4e6,
+    Omega = 7.27220521664304e-5,
+    ptop = 225.52395239472398, # compatible with NCARL30 vertical coordinate
+    Cp = 1004.5,
     kappa = 2 / 7,
     p0 = 1e5,
     T0 = 300,
-    radius = 6.4e6,
-    Omega = 7.272e-5,
-    hours_per_period = 1,
-    interval = 6 * 3600, # 6-hour intervals
+    nu_gradrot = 1e-16,
+    hyperdiff_nu = 0.002,
+    # simulation
+    testcase = (), # to override default test case parameters
+    interval = 6 * 3600, # 6-hour intervals between saved snapshots
 )

@@ -5,7 +5,9 @@ using InteractiveUtils
 
 @time_imports begin
     using ThreadPinning
-    pinthreads(:cores)
+#    pinthreads(:cores)
+    pinthreads([0, 2])
+    
     using SIMDMathFunctions
     using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
 
@@ -79,9 +81,9 @@ choices = (
     Prec = Float64,
     nz = 30,
     hyperdiff_n = 2,
-    remap_period = 5,
+    remap_period = 6,
     nlat = 96,
-    ndays = 5,
+    ndays = 10,
 )
 params = (
     ptop = 225.52395239472398,
@@ -91,7 +93,7 @@ params = (
     T0 = 300,
     radius = 6.4e6,
     Omega = 7.272e-5,
-    hyperdiff_nu = 0.002,
+    hyperdiff_nu = 0, # 0.002,
     courant = 4.0,
     interval = 6 * 3600, # 6-hour intervals
 )

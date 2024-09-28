@@ -1,38 +1,39 @@
-# # HPE, mimetic FD on SCVT
+# # HPE, mimetic FD on SCVT (Dubos et al., 2015)
 # # Hydrostatic primitive equations, mimetic finite differences on a spherical Voronoi mesh
 
 # ## Preamble
+using Revise
 using Pkg; Pkg.activate(@__DIR__)
 using InteractiveUtils
 
+@time_imports using oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
+
 include("setup.jl")
-
+include("../../SpectralHPE.jl/NCARL30.jl")
 include("params.jl")
-params = map(choices.precision, params)
 
-sphere =
-    VoronoiSphere(DYNAMICO_reader(ncread, choices.meshname); prec = choices.precision)
-@info sphere
+# stop as early as possible if output file is already present
+ncfile = Base.Filesystem.abspath("$(choices.filename).nc")
+@assert !Base.Filesystem.ispath(ncfile) "Output file $ncfile exists, please delete/move it and re-run."
 
-model, diags, state0 = setup(sphere, choices, params);
-interp = let
-    lons, lats = collect(choices.lons), collect(choices.lats)
-    ClimFlowsPlots.SphericalInterpolations.lonlat_interp(sphere, lons, lats)
-end
+include("create_model.jl")
+include("run.jl")
 
 tape = [state0]
-
-include("save.jl")
-
-save(tape, choices.filename) do state
-    session = open(diags; model, interp, state)
-    return ((sym, getproperty(session, sym)) for sym in choices.outputs)
+if choices.try_gpu && oneAPI.functional()
+    oneAPI.versioninfo()
+    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), oneArray)
+    simulation(choices, params, model |> gpu, diags, to_lonlat, state0 |> gpu) do state_gpu
+        push!(tape, state_gpu |> cpu)
+    end;
+else
+    simulation(choices, params, model, diags, to_lonlat, state0) do state
+        push!(tape, state)
+    end
 end
 
-exit()
-
-include("run.jl")
-solver! = solver(choices, params, model, state0)
-
-@info "Macro time step = $(solver!.dt) s"
-@info "Interval = $(3600*params.hours_per_period) s"
+include("save.jl")
+@time save(tape, ncfile) do state
+    session = open(diags; model, to_lonlat, state)
+    return ((sym, getproperty(session, sym)) for sym in choices.outputs)
+end

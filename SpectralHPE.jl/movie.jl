@@ -32,7 +32,7 @@ var_ref(var) = function(session)
     return transpose(interpolated[:, :, 1])
 end
 
-function save(tape, filename = "data.nc"; vars...)
+function save(tape, filename = "SpectralHPE.nc"; vars...)
 
     nt = length(tape)
     for i in 0:nt
