@@ -2,15 +2,14 @@
 using Pkg; Pkg.activate(@__DIR__); Pkg.instantiate()
 using InteractiveUtils
 
-using CUDA
 using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda
+using oneAPI: oneAPI, oneAPIBackend, oneArray
+
 using Adapt: Adapt, adapt
 using KernelAbstractions
 
 using LoopManagers: PlainCPU, MultiThread, VectorizedCPU, KernelAbstractions_GPU
 using ManagedLoops: ManagedLoops, @loops, @vec, synchronize, LoopManager, DeviceManager
-
-Adapt.adapt(mgr::DeviceManager, x) = adapt(mgr.gpu, x)
 
 @loops function muladd100!(_, out, a,b,c)
     let irange = eachindex(out, a,b,c)
@@ -39,8 +38,8 @@ function peak(fun::Fun, ops, mgrs ; F=Float32, n=5000, N=n*n) where Fun
     alloc() = zeros(F, N)
     out, a, b, c = (alloc() for i in 1:4)
     for mgr in mgrs
-        (oo, aa,bb,cc) = (adapt(mgr, x) for x in (out, a,b,c))
-        t = minimum(1:100) do _
+        (oo, aa,bb,cc) = ( (x |> mgr) for x in (out, a,b,c))
+        t = minimum(1:10) do _
             @elapsed begin
                 fun(mgr, oo, aa,bb,cc)
                 synchronize(mgr)
@@ -51,10 +50,21 @@ function peak(fun::Fun, ops, mgrs ; F=Float32, n=5000, N=n*n) where Fun
     end
 end
 
-include("baseline.jl")
-
 versioninfo() # check JULIA_EXCLUSIVE and JULIA_NUM_THREADS
-gpu = KernelAbstractions_GPU(CUDABackend(), CuArray)
+
+if CUDA.functional()
+    include("baseline.jl")
+    gpu = KernelAbstractions_GPU(CUDABackend(), CuArray)
+    CUDA.versioninfo()
+elseif oneAPI.functional()
+    gpu = KernelAbstractions_GPU(oneAPIBackend(), oneArray)
+    oneAPI.versioninfo()
+else
+    gpu = PlainCPU()
+end
+
+@info gpu
+
 simd(N=8) = VectorizedCPU(N)
 multi(N=8, nt=Threads.nthreads()) = MultiThread(simd(N), nt)
 
