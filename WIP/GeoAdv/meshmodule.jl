@@ -413,7 +413,7 @@ end # function overview for meshes
 struct MassField
     nx::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 2}
 end # struct MassField
 
 function overview(m::MassField)::String
@@ -500,7 +500,7 @@ end
 struct DualField
     ndual::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 2}
 end 
 
 function overview(m::DualField)::String
@@ -565,7 +565,7 @@ abstract type MeshField ; end
 struct Flux <: MeshField
     nedge::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 2}
 end 
 Base.getindex(fl::MeshField, elements...) = fl.F[elements...]
 Base.setindex!(fl::MeshField, val, elements...) = setindex!(fl.F, val, elements...)
@@ -620,7 +620,7 @@ end
 struct NormalVector
     nedge::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 2}
 end 
 
 function normal_vector(m::Mesh, nz::Int)::NormalVector
@@ -661,7 +661,7 @@ end
 struct TangentialVector
     nedge::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 2}
 end 
 
 function tangential_vector(m::Mesh, nz::Int)::TangentialVector
@@ -691,8 +691,8 @@ end
 struct MassVector
     nx::Int
     nz::Int
-    u::Array{Float64}
-    v::Array{Float64}
+    u::Array{Float64,2}
+    v::Array{Float64,2}
 end # struct MassVector
 
 function overview(m::MassVector)::String
@@ -743,7 +743,7 @@ end
 struct MassVector3d
     nx::Int
     nz::Int
-    F::Array{Float64}
+    F::Array{Float64, 3}
 end # struct MassVector3d
 
 function overview(m::MassVector3d)::String
@@ -796,8 +796,8 @@ end
 struct EdgeVector
     nedge::Int
     nz::Int
-    u::Array{Float64}
-    v::Array{Float64}
+    u::Array{Float64,2}
+    v::Array{Float64,2}
 end # struct EdgeVector
 
 function overview(m::EdgeVector)::String

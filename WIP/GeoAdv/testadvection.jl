@@ -3,7 +3,8 @@ using Revise
 
 using LinearAlgebra
 using Statistics
-include("meshmodule.jl")
+
+includet("meshmodule.jl")
 using .MeshModule
 
 const PERMITTEDOPTIONS = Set(["godunov", "slfv"])
@@ -164,10 +165,11 @@ add_time_slot(ds, t)
 put_mass_field(ds, "rho", rho)
 put_mass_field(ds, "conc", conc)
 
+nsteps=2
 
 for i in 1:nsteps
-    fill_field(mesh, streamfunction, solid_rotation_sf)
-    fill_flux(mesh, fl, streamfunction, dt)
+    @time fill_field(mesh, streamfunction, solid_rotation_sf)
+    @time fill_flux(mesh, fl, streamfunction, dt)
     calc_delta(mesh, rho, conc, fl, delta_rho, delta_conc, iadv)
     add(conc, delta_conc)
     add(rho, delta_rho)
