@@ -973,9 +973,9 @@ function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
         for ix = 1:m.nx
             for id = 1:3
                 grad.F[id, ix, iz] = sum(
-                (phic.F[m.primal_neighbour[ind, ix], iz] - phic.F[ix, iz]) *
-                m.primal_grad3d[ind, ix, id] for ind = 1:m.primal_deg[ix]
-            )
+                    (phic.F[m.primal_neighbour[ind, ix], iz] - phic.F[ix, iz]) *
+                    m.primal_grad3d[ind, ix, id] for ind = 1:m.primal_deg[ix]
+                )
             end
         end
     end
@@ -999,7 +999,7 @@ function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
             # calculate the alpha multiplicator (alpha <=1)
             alpha = 1.0
             for iedge = 1:m.primal_deg[ix]
-                edge_est = phicenter + dot(grad.F[:, ix, iz], m.cen2edge[:, iedge, ix])
+                edge_est = phicenter + @views dot(grad.F[:, ix, iz], m.cen2edge[:, iedge, ix])
                 if edge_est > maxi
                     alpha = min(alpha, (maxi - phicenter) / (edge_est - phicenter))
                 elseif edge_est < mini
@@ -1007,7 +1007,9 @@ function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
                 end
             end
             # apply the alpha mutliplicator
-            grad.F[:, ix, iz] = alpha * grad.F[:, ix, iz]
+            for dim=1:3 
+                grad.F[dim, ix, iz] *= alpha
+            end
         end
     end
 end
@@ -1051,16 +1053,18 @@ function normal2tangential(m::Mesh, v::NormalVector, tang::TangentialVector)
 end
 
 function speedreconst(m::Mesh, v::NormalVector, tang::TangentialVector, rec::EdgeVector)
-    #   Constructs u and v from the normal and meridional component
+    # Constructs u and v from the normal and meridional component
     # This routine is NOT part of the initialization. It is optimized
     # (no trigonometric calculations)
+    vec3(f) = (f(1), f(2), f(3)) # creating a tuple instead of Array avoids an allocation
     for iedge = 1:v.nedge
         for iz = 1:v.nz
-            recvec =
-                v.F[iedge, iz] * m.normalvec_edge[:, iedge] +
-                tang.F[iedge, iz] * m.tangvec_edge[:, iedge]
-            rec.u[iedge, iz] = dot(recvec, m.ulam_e[:, iedge])
-            rec.v[iedge, iz] = dot(recvec, m.uphi_e[:, iedge])
+            recvec = vec3() do dim
+                v.F[iedge, iz] * m.normalvec_edge[dim, iedge] +
+                tang.F[iedge, iz] * m.tangvec_edge[dim, iedge]
+            end
+            rec.u[iedge, iz] = dot(recvec, @view m.ulam_e[:, iedge])
+            rec.v[iedge, iz] = dot(recvec, @view m.uphi_e[:, iedge])
         end # loop on iz
     end # loop in iedge
     return

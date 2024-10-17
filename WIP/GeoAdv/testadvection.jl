@@ -1,4 +1,5 @@
-using Pkg; Pkg.activate(@__DIR__)
+using Pkg;
+Pkg.activate(@__DIR__);
 using Revise
 
 using LinearAlgebra
@@ -20,14 +21,19 @@ function mr_slfv(
     iup::Integer,
     iedge::Integer,
     grad3d::MassVector3d,
-    speeddt::EdgeVector
-    )::Float64
-    centervec = m.radvec_i[:,iup]
-    edgevec   = m.radvec_e[:,iedge]
-    dxvec = -0.5 * (speeddt.u[iedge, iz] * m.ulam_e[:,iedge] + speeddt.v[iedge, iz] * m.uphi_e[:,iedge])
-    xtarget = edgevec + dxvec
-    mr_int   = mr.F[iup, iz] + dot(xtarget - centervec, grad3d.F[:,iup, iz]) 
-    return mr_int
+    speeddt::EdgeVector,
+)::Float64
+
+    return mr.F[iup, iz] + sum((1,2,3)) do dim
+        centervec = m.radvec_i[dim, iup]
+        edgevec = m.radvec_e[dim, iedge]
+        dxvec =
+            -0.5 * (
+                speeddt.u[iedge, iz] * m.ulam_e[dim, iedge] +
+                speeddt.v[iedge, iz] * m.uphi_e[dim, iedge]
+            )
+        (edgevec + dxvec - centervec) * grad3d.F[dim, iup, iz]
+    end
 end
 
 function calc_delta(
@@ -37,7 +43,7 @@ function calc_delta(
     fl::Flux,
     delta_rho::MassField,
     delta_conc::MassField,
-    iadv::Integer
+    iadv::Integer,
 )
     # Calculate mixing ratio
     mr = mass_field(mesh, rho.nz)
@@ -48,24 +54,24 @@ function calc_delta(
         grad3d = mass_vector3d(mesh, rho.nz)
         tang = tangential_vector(mesh, rho.nz)
         rec = edge_vector(mesh, rho.nz)
-        
+
         # calculate the mixing-ratio gradient
         gradient(mesh, mr, grad3d)
-        
+
         # Limit the mixing-ratio gradient to ensure monotonicity
         gradient_limiter!(mesh, mr, grad3d)
-        
+
         # Reconstruct speed-vector*dt from flux*dt
         fill_normal_vector(mesh, nv, fl)
         normal2tangential(mesh, nv, tang)
         speedreconst(mesh, nv, tang, rec)
     end
-    
-    for ix in 1:m.nx    # Loop on cells
-        for iz in 1:rho.nz    # Vertical loop
+
+    for ix = 1:m.nx    # Loop on cells
+        for iz = 1:rho.nz    # Vertical loop
             delta_conc.F[ix, iz] = 0.0
             delta_rho.F[ix, iz] = 0.0
-            for iedge in 1:m.primal_deg[ix]   # Loop on edges
+            for iedge = 1:m.primal_deg[ix]   # Loop on edges
                 edge_num = m.primal_edge[iedge, ix]
                 nei_num = m.primal_neighbour[iedge, ix]
                 ne = m.primal_ne[iedge, ix]
@@ -79,14 +85,14 @@ function calc_delta(
                 else
                     iup = nei_num
                 end
-                
+
                 if iadv == GODUNOV
                     mrup = mr.F[iup, iz]
                 end
                 if iadv == SLFV
                     mrup = mr_slfv(m, rho, mr, fl, iz, iup, edge_num, grad3d, rec)
                 end
-                        
+
                 mf = mf * rho.F[iup]
                 delta_rho.F[ix, iz] = delta_rho.F[ix, iz] - mf / m.Ai[ix]
                 delta_conc.F[ix, iz] = delta_conc.F[ix, iz] - mf * mrup / m.Ai[ix]
@@ -150,37 +156,37 @@ t = 0.0
 
 ds = create_netcdf_structure(mesh)
 print(typeof(ds))
-create_mass_field(ds, 
-                  "conc", 
-                  "tracer concentration",
-                  "molecule / m3",
-                  "time_counter cell lev")
-create_mass_field(ds, 
-                  "rho", 
-                  "air concentration", 
-                  "molecule / m3", 
-                  "time_counter cell lev")
-                  
+create_mass_field(
+    ds,
+    "conc",
+    "tracer concentration",
+    "molecule / m3",
+    "time_counter cell lev",
+)
+create_mass_field(ds, "rho", "air concentration", "molecule / m3", "time_counter cell lev")
+
 add_time_slot(ds, t)
 put_mass_field(ds, "rho", rho)
 put_mass_field(ds, "conc", conc)
 
-nsteps=2
-
-for i in 1:nsteps
-    @time fill_field(mesh, streamfunction, solid_rotation_sf)
-    @time fill_flux(mesh, fl, streamfunction, dt)
+for i = 1:nsteps
+    if mod(i,50)==0 
+        @info "t=$i"
+        print(overview(conc))
+        print(overview(rho))
+    end
+    fill_field(mesh, streamfunction, solid_rotation_sf)
+    fill_flux(mesh, fl, streamfunction, dt)
     calc_delta(mesh, rho, conc, fl, delta_rho, delta_conc, iadv)
     add(conc, delta_conc)
     add(rho, delta_rho)
-    print(locate_max(mesh, conc), "\n")
-    print(mass(mesh, conc), "\n")
+#    print(locate_max(mesh, conc), "\n")
+#    print(mass(mesh, conc), "\n")
     t = t + dt
     add_time_slot(ds, t)
     put_mass_field(ds, "rho", rho)
     put_mass_field(ds, "conc", conc)
 end
-
 
 print("FINAL CONCENTRATION\n")
 print(overview(conc))
