@@ -2,23 +2,24 @@
 
 choices = (
     # computing
+    compare_to_spectral = false,
+    cpu = MultiThread(VectorizedCPU(16),2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-    compare_to_spectral = true,
-    cpu = MultiThread(VectorizedCPU(16)), # PlainCPU(), # VectorizedCPU(8),
+    gpu_blocks = (0,8), # tuned for Intel Iris Xe, should be 32 on NVIDIA GPUs
     precision = Float32,
     # numerics
-    meshname = "uni.1deg.mesh.nc",
-    coordinate = NCARL30, # SigmaCoordinate
-    nz = 30,
+    meshname = "uni.2deg.mesh.nc",
+    coordinate = SigmaCoordinate, # NCARL30, # SigmaCoordinate
+    nz = 96,
     nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
-    remap_period = 4, # number of RK time steps between two remaps
+    remap_period = 3, # number of RK time steps between two remaps
     # physics
     Fluid = IdealPerfectGas,
     TestCase = Jablonowski06,
     # simulation
-    ndays = 10,
+    ndays = 1,
     filename = "VoronoiHPE",
     outputs = (:Omega, :surface_pressure, :temperature),
     # outputs = (:Phi_dot, :Omega, :ulon, :ulat, :dulat, :surface_pressure, :temperature, :pressure, :geopotential),

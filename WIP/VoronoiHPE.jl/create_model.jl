@@ -63,3 +63,10 @@ else
     end
 
 end
+
+if choices.try_gpu && oneAPI.functional()
+    oneAPI.versioninfo()
+    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), oneAPI.KernelAdaptor(), choices.gpu_blocks)
+else
+    cpu, gpu = choices.cpu, choices.cpu
+end
