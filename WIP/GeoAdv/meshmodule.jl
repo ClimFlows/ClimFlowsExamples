@@ -964,7 +964,6 @@ end
 # primal2dual uses barycentric weights to interpolate a scalar from the primal celle generators
 #     onto the dual cell generators.
 
-
 function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
     # Calculate the gradient of a MassField and store the result in MassVector grads
     # This uses precalculated weights.
@@ -972,10 +971,12 @@ function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
     # (no trigonometric calculations)
     for iz = 1:grad.nz
         for ix = 1:m.nx
-            grad.F[:, ix, iz] = sum(
-                (phic.F[m.primal_neighbour[ind, ix], iz] .- phic.F[ix, iz]) *
-                m.primal_grad3d[ind, ix, :] for ind = 1:m.primal_deg[ix]
+            for id = 1:3
+                grad.F[id, ix, iz] = sum(
+                (phic.F[m.primal_neighbour[ind, ix], iz] - phic.F[ix, iz]) *
+                m.primal_grad3d[ind, ix, id] for ind = 1:m.primal_deg[ix]
             )
+            end
         end
     end
 end
