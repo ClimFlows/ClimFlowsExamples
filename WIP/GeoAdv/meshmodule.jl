@@ -4,6 +4,10 @@ using NetCDF
 using NCDatasets
 using LinearAlgebra
 
+using CFDomains: HVLayout
+using CFDomains.Stencils: Fix
+using ManagedLoops: @unroll
+
 export Mesh,
     overview,
     create_mesh,
@@ -964,6 +968,29 @@ end
 # primal2dual uses barycentric weights to interpolate a scalar from the primal celle generators
 #     onto the dual cell generators.
 
+"""
+    gradient3d!(grad3d, vsphere, q)
+
+Compute the gradient `grad3d` of a scalar (0-form) `q` using precomputed
+weights provided by `vsphere`.
+`q` is known at primal cells. `gradq3d` is a 3D vector known at primal cells.
+"""
+function gradient3d!(gradq3d, vsphere, q::AbstractMatrix, ::HVLayout{1})
+    for k in axes(q, 2) # vertical dimension = outer loop
+        for cell in axes(q, 1)
+            deg = vsphere.primal_deg[cell]
+            @unroll deg in 5:7 for dim in 1:3
+                gradq3d[dim, cell, k] = sum(
+                    (q[vsphere.primal_neighbour[edge, cell], k] - q[cell, k]) *
+                    vsphere.primal_grad3d[edge, cell, dim] for edge = 1:deg
+                )
+            end
+        end
+    end
+    return nothing
+end
+
+#=
 function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
     # Calculate the gradient of a MassField and store the result in MassVector grads
     # This uses precalculated weights.
@@ -980,6 +1007,9 @@ function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
         end
     end
 end
+=#
+
+gradient(m::Mesh, phic::MassField, grad::MassVector3d) = gradient3d!(grad.F, m, phic.F, HVLayout{1}())
 
 function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
     # Limitates the gradient
@@ -999,7 +1029,8 @@ function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
             # calculate the alpha multiplicator (alpha <=1)
             alpha = 1.0
             for iedge = 1:m.primal_deg[ix]
-                edge_est = phicenter + @views dot(grad.F[:, ix, iz], m.cen2edge[:, iedge, ix])
+                edge_est =
+                    phicenter + @views dot(grad.F[:, ix, iz], m.cen2edge[:, iedge, ix])
                 if edge_est > maxi
                     alpha = min(alpha, (maxi - phicenter) / (edge_est - phicenter))
                 elseif edge_est < mini
@@ -1007,7 +1038,7 @@ function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
                 end
             end
             # apply the alpha mutliplicator
-            for dim=1:3 
+            for dim = 1:3
                 grad.F[dim, ix, iz] *= alpha
             end
         end
