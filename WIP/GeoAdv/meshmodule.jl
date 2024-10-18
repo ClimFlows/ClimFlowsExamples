@@ -979,7 +979,7 @@ function gradient3d!(gradq3d, vsphere, q::AbstractMatrix, ::HVLayout{1})
     for k in axes(q, 2) # vertical dimension = outer loop
         for cell in axes(q, 1)
             deg = vsphere.primal_deg[cell]
-            @unroll deg in 5:7 for dim in 1:3
+            @unroll deg in 5:7 for dim = 1:3
                 gradq3d[dim, cell, k] = sum(
                     (q[vsphere.primal_neighbour[edge, cell], k] - q[cell, k]) *
                     vsphere.primal_grad3d[edge, cell, dim] for edge = 1:deg
@@ -1009,7 +1009,8 @@ function gradient(m::Mesh, phic::MassField, grad::MassVector3d)
 end
 =#
 
-gradient(m::Mesh, phic::MassField, grad::MassVector3d) = gradient3d!(grad.F, m, phic.F, HVLayout{1}())
+gradient(m::Mesh, phic::MassField, grad::MassVector3d) =
+    gradient3d!(grad.F, m, phic.F, HVLayout{1}())
 
 function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
     # Limitates the gradient
@@ -1044,6 +1045,46 @@ function gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d)
         end
     end
 end
+gradient_limiter!(m::Mesh, phic::MassField, grad::MassVector3d) =
+    gradient_limiter!(grad.F, m, phic.F, grad.F, HVLayout{1}())
+
+"""
+    gradient_limiter!(gradq3d_lim, sphere, q, gradq3d, ::HVLayout{1})
+Limits the gradient so that any reconstructed value inside each cell is within
+the min and max of neighbouring cells. 
+"""
+function gradient_limiter!(gradq3d_lim, sphere, q, gradq3d, ::HVLayout{1})
+    for cell in axes(q, 1), k in axes(q, 2)
+        deg = sphere.primal_deg[cell]
+        @unroll deg in 5:7 begin
+            # all values of q are shifted by qcenter
+            # calculate the min and max of q over the current primal cell and its neighbours
+            qcenter = q[cell, k]
+            neighbour_values = (q[sphere.primal_neighbour[i], k] - qcenter for i = 1:deg)
+            mini = min(zero(qcenter), minimum(neighbour_values))
+            maxi = max(zero(qcenter), maximum(neighbour_values))
+
+            # calculate the alpha multiplicator (alpha <=1)
+            alpha = one(qcenter)
+            for iedge = 1:deg
+                edge_est = sum(
+                    gradq3d[dim, cell, k] * sphere.cen2edge[dim, iedge, cell] for dim = 1:3
+                )
+                if edge_est > maxi
+                    alpha = min(alpha, maxi / edge_est) # 0 <= maxi < edge_est  ==> alpha <= 1
+                elseif edge_est < mini
+                    alpha = min(alpha, mini / edge_est) # edge_est < mini <= 0  ==> alpha <= 1
+                end
+            end
+
+            # apply the alpha multiplicator
+            for dim = 1:3
+                gradq3d_lim[dim, cell, k] = alpha * gradq3d[dim, cell, k]
+            end
+        end
+    end
+end
+
 
 function primal2dual(m::Mesh, f::MassField, d::DualField)
     # Interpolate from primal to dual grid generators using barycentric weights.
