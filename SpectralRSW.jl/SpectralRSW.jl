@@ -15,7 +15,6 @@ include("preamble.jl")
     using ClimFlowsTestCases: Williamson91, testcase, describe, initial_flow
 
     using CFTimeSchemes: CFTimeSchemes, advance!
-    using BenchmarkTools
 
     using GeoMakie, CairoMakie, ColorSchemes
     using CookBooks

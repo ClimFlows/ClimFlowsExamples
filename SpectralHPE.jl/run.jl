@@ -114,7 +114,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
             @time run_loop(timeloop, 1, interval, state, scratch)
             push!(tape, deepcopy(state))
             if mod(params.interval * iter, 86400) == 0
-                @info "day $(iter/4)"
+                @info "day $(params.interval*iter/86400)"
                 display(heatmap(diag(state)))
             end
         end
