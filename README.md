@@ -7,11 +7,15 @@ Other directories contains examples supposed to work out-of-the box after readin
 
 Each example directory is an independent Julia project, with its own `Project.toml` including `compat` entries. This should guarantee that they do not need to follow updates of the ecosystem to continue working. This also means that early applications may reflect an early state of the ecosystem.
 
-## Rotating shallow-water equations, spherical harmonics
+## [Hydrostatic compressible equations, spectral harmonics](https://github.com/ClimFlows/ClimFlowsExamples/tree/main/SpectralHPE.jl)
+
+https://github.com/user-attachments/assets/71d3168e-2d8e-4c71-9cf8-9b0d936a8881
+
+## [Rotating shallow-water equations, spherical harmonics](https://github.com/ClimFlows/ClimFlowsExamples/tree/main/SpectralRSW.jl)
 
 https://github.com/ClimFlows/.github/assets/24214175/4410dfe0-eff4-4b8c-b17b-546103ba6579
 
-## Rotating shallow-water equations, mimetic finite differences
+## [Rotating shallow-water equations, mimetic finite differences](https://github.com/ClimFlows/ClimFlowsExamples/tree/main/VoronoiRSW.jl)
 
 https://github.com/ClimFlows/.github/assets/24214175/3ae1b0a0-bef2-4ef1-8602-7c1f86b381a4
 
