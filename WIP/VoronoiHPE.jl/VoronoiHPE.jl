@@ -15,8 +15,6 @@ include("params.jl")
 ncfile = Base.Filesystem.abspath("$(choices.filename).nc")
 # @assert !Base.Filesystem.ispath(ncfile) "Output file $ncfile exists, please delete/move it and re-run."
 
-# choices = (choices..., gpu_blocks=(0,8))
-choices = (choices..., gpu_blocks=(512,8))
 include("create_model.jl")
 include("run.jl")
 

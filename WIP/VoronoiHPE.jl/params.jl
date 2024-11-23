@@ -1,15 +1,18 @@
-# choices is for discrete parameters, while params is for continuous parameters (floats)
+# `choices` is for discrete parameters, while `params` is for continuous parameters (floats)
+# Values in `params` will be converted to `choices.precision`.
 
 choices = (
     # computing
     compare_to_spectral = false,
-    cpu = MultiThread(VectorizedCPU(16),2), # PlainCPU(), # VectorizedCPU(8),
+    cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-    gpu_blocks = (0,8), # tuned for Intel Iris Xe, should be 32 on NVIDIA GPUs
+#    gpu_blocks = (0,0), # baseline, probably not optimal
+    gpu_blocks = (0,8),  # tuned for Intel Iris Xe
+#    gpu_blocks = (0,32),  # for NVIDIA GPUs, needs tuning
     precision = Float32,
     # numerics
     meshname = "uni.2deg.mesh.nc",
-    coordinate = SigmaCoordinate, # NCARL30, # SigmaCoordinate
+    coordinate = SigmaCoordinate, # NCARL30,
     nz = 96,
     nlat = 64, # for the spectral model
     consvar = :temperature,
@@ -19,7 +22,7 @@ choices = (
     Fluid = IdealPerfectGas,
     TestCase = Jablonowski06,
     # simulation
-    ndays = 1,
+    ndays = 10,
     filename = "VoronoiHPE",
     outputs = (:Omega, :surface_pressure, :temperature),
     # outputs = (:Phi_dot, :Omega, :ulon, :ulat, :dulat, :surface_pressure, :temperature, :pressure, :geopotential),
