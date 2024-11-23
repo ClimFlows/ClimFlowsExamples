@@ -1,19 +1,23 @@
-# choices is for discrete parameters, while params is for continuous parameters (floats)
+# `choices` is for discrete parameters, while `params` is for continuous parameters (floats)
+# Values in `params` will be converted to `choices.precision`.
 
 choices = (
     # computing
+    compare_to_spectral = false,
+    cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-    compare_to_spectral = true,
-    cpu = MultiThread(VectorizedCPU(16)), # PlainCPU(), # VectorizedCPU(8),
+#    gpu_blocks = (0,0), # baseline, probably not optimal
+    gpu_blocks = (0,8),  # tuned for Intel Iris Xe
+#    gpu_blocks = (0,32),  # for NVIDIA GPUs, needs tuning
     precision = Float32,
     # numerics
-    meshname = "uni.1deg.mesh.nc",
-    coordinate = NCARL30, # SigmaCoordinate
-    nz = 30,
+    meshname = "uni.2deg.mesh.nc",
+    coordinate = SigmaCoordinate, # NCARL30,
+    nz = 96,
     nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
-    remap_period = 4, # number of RK time steps between two remaps
+    remap_period = 3, # number of RK time steps between two remaps
     # physics
     Fluid = IdealPerfectGas,
     TestCase = Jablonowski06,

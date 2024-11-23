@@ -1,3 +1,11 @@
+cpu, gpu = choices.cpu, choices.cpu
+
+if choices.try_gpu && oneAPI.functional()
+    @info "Functional oneAPI GPU detected !"
+    oneAPI.versioninfo()
+    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.gpu_blocks)
+end
+
 model, diags, state0 = let params = rmap(choices.precision, params)
     reader = DYNAMICO_reader(ncread, choices.meshname)
     vsphere = VoronoiSphere(reader; prec = choices.precision)

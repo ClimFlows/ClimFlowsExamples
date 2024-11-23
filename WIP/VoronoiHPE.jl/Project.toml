@@ -26,5 +26,5 @@ oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
 
 [compat]
 CFHydrostatics = "0.3.4"
-LoopManagers = "0.1.6"
+LoopManagers = "0.2"
 ManagedLoops = "0.1.8"
