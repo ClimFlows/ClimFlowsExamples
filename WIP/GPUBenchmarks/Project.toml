@@ -1,20 +1,25 @@
 [deps]
 AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+CFDomains = "3699aaca-035b-4155-96ec-eecb526248de"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ClimFlowsData = "f57ce217-a21f-4063-8e40-561e9bf56723"
 Einsum = "b7d42ee7-0b51-5a75-98ca-779d3107e4c0"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LoopManagers = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
 ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
+MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
 NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
+NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
+PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
+SIMDMathFunctions = "d22a7203-ad50-4fbc-abc4-d6ac724cca58"
 oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
 
 [compat]
 ManagedLoops = "0.1.10"
-oneAPI = "1.6"
 
 [extras]
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
