@@ -8,3 +8,7 @@ Pkg.instantiate()
 # we must download Voronoi meshes on the login node
 using ClimFlowsData
 ClimFlowsData.DYNAMICO_reader(nothing, "")
+
+# tell CUDA to use local toolkit
+using CUDA
+CUDA.set_runtime_version!(; local_toolkit=true)

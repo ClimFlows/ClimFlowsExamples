@@ -6,6 +6,12 @@ if choices.try_gpu && oneAPI.functional()
     cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.gpu_blocks)
 end
 
+if choices.try_gpu && CUDA.functional()
+    @info "Functional CUDA GPU detected !"
+    CUDA.versioninfo()
+    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.gpu_blocks)
+end
+
 model, diags, state0 = let params = rmap(choices.precision, params)
     reader = DYNAMICO_reader(ncread, choices.meshname)
     vsphere = VoronoiSphere(reader; prec = choices.precision)
