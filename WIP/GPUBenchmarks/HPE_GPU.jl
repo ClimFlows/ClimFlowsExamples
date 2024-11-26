@@ -38,31 +38,6 @@ function bench(fun!, mgrs, args...)
     return permutedims([fun!, times...])
 end
 
-#=
-    fun!(out_cpu, cpu, args_cpu...)
-    @info "$fun! on $cpu"
-    time_cpu = (@timed begin
-                    for i in 1:100
-                        fun!(out_cpu, cpu, args_cpu...)
-                    end
-                end).time
-    time_gpus = (begin
-                     args_gpu = gpu(args_cpu)
-                     out_gpu = gpu(out_cpu)
-                     fun!(out_gpu, gpu, args_gpu...)
-                     @info "$fun! on $gpu"
-                     (@timed begin
-                          for i in 1:100
-                              fun!(out_gpu, gpu, args_gpu...)
-                          end
-                          synchronize(gpu)
-                      end).time
-                 end
-                 for gpu in gpus)
-    return permutedims([fun!, time_cpu, time_gpus...])
-end
-=#
-
 mmul!(P, _, M, N) = mul!(similar!(P, M), M, N)
 vexp!(y, mgr, x) = @. mgr[y] = @fastmath log(exp(x))
 
@@ -113,4 +88,4 @@ pretty_table(data;
              highlighters=best,
              tf=tf_unicode_rounded)
 
-GC.gc(true) # try to free GPU resources before exiting
+GC.gc(true) # free GPU resources before exiting to avoid segfault ?
