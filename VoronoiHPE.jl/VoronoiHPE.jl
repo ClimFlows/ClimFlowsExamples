@@ -8,12 +8,12 @@ using InteractiveUtils
 @time_imports using CUDA, oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
 
 include("setup.jl")
-include("../../SpectralHPE.jl/NCARL30.jl")
-include("params.jl")
+include("NCARL30.jl")
+include("config.jl")
 
-# stop as early as possible if output file is already present
+# stop early if output file is already present
 ncfile = Base.Filesystem.abspath("$(choices.filename).nc")
-# @assert !Base.Filesystem.ispath(ncfile) "Output file $ncfile exists, please delete/move it and re-run."
+@assert !Base.Filesystem.ispath(ncfile) "Output file $ncfile exists, please delete/move it and re-run."
 
 include("create_model.jl")
 include("run.jl")

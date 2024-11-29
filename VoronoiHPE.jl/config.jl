@@ -6,10 +6,8 @@ choices = (
     compare_to_spectral = false,
     cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-#    gpu_blocks = (0,0), # baseline, probably not optimal
-#    gpu_blocks = (0,8),  # tuned for Intel Iris Xe
-    gpu_blocks = (0,32),  # for NVIDIA GPUs, needs tuning
-    precision = Float64,
+    blocks = (oneAPI=(0,8), CUDA=(0,32)), # roughly tuned Intel Iris Xe and NVIDIA V100
+    precision = Float32,
     # numerics
     meshname = "uni.1deg.mesh.nc",
     coordinate = SigmaCoordinate, # NCARL30,
