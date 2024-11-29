@@ -1,3 +1,8 @@
+[compat]
+CFHydrostatics = "0.3.4"
+LoopManagers = "0.2"
+ManagedLoops = "0.1.8"
+
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CFDomains = "3699aaca-035b-4155-96ec-eecb526248de"
@@ -5,6 +10,7 @@ CFHydrostatics = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
 CFPlanets = "9c2ca15e-caec-41c0-a22c-2e93fe5a241f"
 CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
 CFTransport = "aafcb771-6be4-4a54-aeb4-fb9a94868d38"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ClimFlowsData = "f57ce217-a21f-4063-8e40-561e9bf56723"
 ClimFlowsPlots = "dd0979db-5334-4d13-8d2e-fa88a4f47f12"
 ClimFlowsTestCases = "55a4ed1b-ebae-44a5-bd1f-98d158431b8a"
@@ -24,7 +30,5 @@ ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
 UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 oneAPI = "8f75cd03-7ff8-4ecb-9b8f-daf728133b1b"
 
-[compat]
-CFHydrostatics = "0.3.4"
-LoopManagers = "0.2"
-ManagedLoops = "0.1.8"
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"

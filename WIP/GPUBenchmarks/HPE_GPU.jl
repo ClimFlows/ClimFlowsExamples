@@ -3,7 +3,7 @@ using Revise
 using Pkg;
 Pkg.activate(@__DIR__);
 
-using oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
+using CUDA, oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
 using LinearAlgebra: mul!
 using PrettyTables
 
@@ -43,24 +43,29 @@ vexp!(y, mgr, x) = @. mgr[y] = @fastmath log(exp(x))
 
 include("voronoi.jl")
 
-choices = (gpu_blocks=(0, 8),
+choices = (gpu_blocks=(0, 32),
            precision=Float32,
            meshname="uni.1deg.mesh.nc",
-           nz=32)
-
+           nz=96)
+reader = DYNAMICO_reader(ncread, choices.meshname)
+vsphere = VoronoiSphere(reader; prec=choices.precision)
+           
 if oneAPI.functional()
     @info "Functional oneAPI GPU detected !"
     oneAPI.versioninfo()
     gpu0 = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), (0, 0))
     gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.gpu_blocks)
+elseif CUDA.functional()
+    @info "Functional CUDA GPU detected !"
+    CUDA.versioninfo()
+    gpu0 = LoopManagers.KernelAbstractions_GPU(CUDABackend(), (0, 0))
+    gpu = LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.gpu_blocks)
 end
 
 plain = PlainCPU()
 simd = VectorizedCPU()
 mgrs = (plain, simd, gpu0, gpu)
 
-reader = DYNAMICO_reader(ncread, choices.meshname)
-vsphere = VoronoiSphere(reader; prec=choices.precision)
 M = randn(choices.precision, 1024, 1024)
 N = randn(choices.precision, 1024, 1024)
 ue = randn(choices.precision, choices.nz, length(edges(vsphere)))

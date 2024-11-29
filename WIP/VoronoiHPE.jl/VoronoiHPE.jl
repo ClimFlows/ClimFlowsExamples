@@ -5,7 +5,7 @@
 using Pkg; Pkg.activate(@__DIR__)
 using InteractiveUtils
 
-@time_imports using oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
+@time_imports using CUDA, oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
 
 include("setup.jl")
 include("../../SpectralHPE.jl/NCARL30.jl")
@@ -20,7 +20,7 @@ include("run.jl")
 
 tape = [state0]
 @time simulation(choices, params, gpu, model, diags, to_lonlat, state0) do state_gpu
-#    push!(tape, state_gpu |> cpu)
+    push!(tape, state_gpu |> cpu)
 end;
 
 include("save.jl")
