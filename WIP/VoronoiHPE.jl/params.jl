@@ -7,11 +7,11 @@ choices = (
     cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
 #    gpu_blocks = (0,0), # baseline, probably not optimal
-    gpu_blocks = (0,8),  # tuned for Intel Iris Xe
-#    gpu_blocks = (0,32),  # for NVIDIA GPUs, needs tuning
-    precision = Float32,
+#    gpu_blocks = (0,8),  # tuned for Intel Iris Xe
+    gpu_blocks = (0,32),  # for NVIDIA GPUs, needs tuning
+    precision = Float64,
     # numerics
-    meshname = "uni.2deg.mesh.nc",
+    meshname = "uni.1deg.mesh.nc",
     coordinate = SigmaCoordinate, # NCARL30,
     nz = 96,
     nlat = 64, # for the spectral model

@@ -1,9 +1,13 @@
 cpu, gpu = choices.cpu, choices.cpu
 
-if choices.try_gpu && oneAPI.functional()
+if oneAPI.functional()
     @info "Functional oneAPI GPU detected !"
     oneAPI.versioninfo()
-    cpu, gpu = choices.cpu, LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.gpu_blocks)
+    gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.gpu_blocks)
+elseif CUDA.functional()
+    @info "Functional CUDA GPU detected !"
+    CUDA.versioninfo()
+    gpu = LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.gpu_blocks)
 end
 
 if choices.try_gpu && CUDA.functional()

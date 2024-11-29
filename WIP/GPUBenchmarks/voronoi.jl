@@ -21,7 +21,7 @@ function apply_primal!(out_, mgr, op, sphere, arg::AbstractMatrix, more...)
             N = sphere.primal_deg[cell]
             @unroll N in 5:7 begin
                 op_cell = op(sphere, cell, Val(N))
-                @simd for k in krange
+                for k in krange
                     out[k, cell] = op_cell(arg, more..., k)
                 end
             end
@@ -66,7 +66,7 @@ function apply!(out_, mgr, objects, op, sphere, arg::AbstractMatrix, more...)
     let (krange, objs) = (axes(arg,1), objects(sphere))
         @inbounds for obj in objs
             op_obj = op(sphere, obj)
-            @simd for k in krange
+            for k in krange
                 v = op_obj(arg, more..., k)
                 out[k, obj] = v
             end
@@ -74,6 +74,25 @@ function apply!(out_, mgr, objects, op, sphere, arg::AbstractMatrix, more...)
     end 
     return out
 end
+
+#=
+function apply!(out_, mgr, objects, op, sphere, arg::AbstractMatrix, more...)
+    out = similar!(out_, arg, (size(arg,1), length(objects(sphere))))
+    @with mgr,
+    let (k0range, objs) = (1:32, objects(sphere))
+        @inbounds for obj in objs
+            op_obj = op(sphere, obj)
+            for k0 in k0range
+                for k in k0:32:size(arg,1)
+                    v = op_obj(arg, more..., k)
+                    out[k, obj] = v
+                end
+            end
+        end
+    end 
+    return out
+end
+=#
 
 # operators
 gradient!(out, mgr, sphere, qi) = apply!(out, mgr, edges, Stencils.gradient, sphere, qi)
