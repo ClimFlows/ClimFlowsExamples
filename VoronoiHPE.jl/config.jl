@@ -9,9 +9,9 @@ choices = (
     blocks = (oneAPI=(0,8), CUDA=(0,32)), # roughly tuned Intel Iris Xe and NVIDIA V100
     precision = Float32,
     # numerics
-    meshname = "uni.1deg.mesh.nc",
+    meshname = DYNAMICO_meshfile("uni.2deg.mesh.nc"),
     coordinate = SigmaCoordinate, # NCARL30,
-    nz = 96,
+    nz = 32,
     nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,

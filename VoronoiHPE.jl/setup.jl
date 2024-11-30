@@ -3,7 +3,7 @@
     pinthreads(:cores)
 
     # heavy dependencies
-    using ClimFlowsData: DYNAMICO_reader
+    using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
     using ClimFlowsPlots
     using NetCDF: ncread, ncwrite, nccreate, ncclose
     using UnicodePlots: heatmap, scatterplot
