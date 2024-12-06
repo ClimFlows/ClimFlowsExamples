@@ -19,6 +19,8 @@ using InteractiveUtils
     using ClimFlowsTestCases: Jablonowski06
 
     using UnicodePlots: heatmap
+#    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
+    using Enzyme
 end
 
 # let CFTimeSchemes use our multi-thread manager when updating the model state

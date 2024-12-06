@@ -1,10 +1,12 @@
 # Fully compressible solver using spherical harmonics for horizontal discretization
 
 using Pkg; Pkg.activate(@__DIR__);
+using Revise
 
 include("setup.jl");
 include("config.jl");
 include("run.jl");
+includet("vertical.jl")
 
 #============================  main program =========================#
 
@@ -25,9 +27,24 @@ params = (Uplanet = params.radius * params.Omega, params...)
 # initial condition
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
+
 state = CFHydrostatics.initial_HPE(case, model)
 state0 = deepcopy(state)
 @time tape = simulation(merge(choices, params), loop_HPE, state0);
+
+H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
+state = initial(H, case, model.vcoord)
+# prepare state with non-zero W
+(dPhi, dW, dm, dS) = grad(potential_energy, H, state...)
+state[1] .+= dW
+state[2] .+= dPhi
+
+energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
+for fun in energies
+    fun(H, state...)
+    grad(fun, H, state...)
+    test_grad(fun, H, state)
+end
 
 include("movie.jl")
 

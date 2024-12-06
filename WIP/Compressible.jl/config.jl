@@ -12,6 +12,10 @@ choices = (
 )
 params = (
     ptop = 225.52395239472398,
+    pb = 1e5,
+    rhob = 1,
+    gravity = 9.81,
+    Phis = 0,
     Cp = 1000,
     kappa = 2 / 7,
     p0 = 1e5,
