@@ -7,9 +7,9 @@ struct VerticalEnergy{Gas,F}
     pb::F   # equilibrium bottom pressure, for non-rigid ground
     rhob::F # stiffness of bottom BC: p_bot = pb + rhob*(Phi-Phis)
 end
-# VerticalEnergy(model, gravity, Phis, pb, rhob) = VerticalEnergy(model.gas, gravity, model.planet.radius^2/gravity, model.vcoord.ptop, Phis, pb, rhob)
-# J = 1 assumes that m incorporates gravity and is per unit mass. m has units of Pa
+
 function VerticalEnergy(model, gravity, Phis, pb, rhob)
+    # J = 1 assumes that m incorporates gravity and is per unit mass. m has units of Pa
     return VerticalEnergy(model.gas, gravity, one(Phis), model.vcoord.ptop, Phis, pb, rhob)
 end
 
@@ -151,7 +151,7 @@ function grad(::typeof(total_energy), H::VerticalEnergy, Phi, W, m, S)
         dHdS[k] += exner
     end
     # boundary
-    dHdPhi[end] += J*ptop
+    dHdPhi[end] += J * ptop
     dHdPhi[1] += J * (rhob * (Phi[1] - Phis) - pb)
 
     return dHdPhi, dHdW, dHdm, dHdS
@@ -195,10 +195,10 @@ function test_canonical(H, state)
     (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
     function f(tau)
         Phitau = @. Phi - tau * dHdW
-        Wtau = @. W + tau * dHdPhi  
+        Wtau = @. W + tau * dHdPhi
         return total_energy(H, Phitau, Wtau, m, S)
     end
-#    dH = Enzyme.autodiff(set_runtime_activity(Forward), Const(f), Const, 0.)
-    dH = Enzyme.autodiff(set_runtime_activity(Reverse), Const(f), Active, Active(0.))
+    #    dH = Enzyme.autodiff(set_runtime_activity(Forward), Const(f), Const, 0.)
+    dH = Enzyme.autodiff(set_runtime_activity(Reverse), Const(f), Active, Active(0.0))
     return f(0), dH
 end

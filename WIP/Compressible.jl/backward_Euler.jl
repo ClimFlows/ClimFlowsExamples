@@ -1,3 +1,16 @@
+struct NewtonSolve
+    niter::Int # number of Newton-Raphson iterations
+    flip_solve::Bool # direction of LU solver passes: false => bottom-up then top-down ; true => top-down then bottom-up
+    update_W::Bool # update W during Newton iteration (true), or only at the end (false)
+    verbose::Bool
+end
+
+function NewtonSolve(user)
+    def = (niter=5, flip_solve=false, update_W=false, verbose=false)
+    options = merge(def, user)
+    return NewtonSolve(options.niter, options.flip_solve, options.update_W, options.verbose)
+end
+
 function fwd_Euler(H, tau, state)
     (Phi, W, m, S) = state
     (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
@@ -6,66 +19,44 @@ function fwd_Euler(H, tau, state)
     return Phitau, Wtau
 end
 
-square(x) = x * x
-L2(x) = sqrt(sum(square, x))
-mindiff(x) = minimum(k -> x[k + 1] - x[k], 1:(length(x) - 1))
-check(x) =
-    if isnan(L2(x)) || isinf(L2(x))
-        @info x
-        error()
-    end
-
-function bwd_Euler(H, tau, state)
+function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
     (; gravity) = H
+    (; niter, flip_solve, update_W, verbose) = newton
+
+    inv_tau_g2 = inv(tau * gravity^2)
     (Phi_star, W_star, m, S) = state
     DPhi, Phi, W = zero(Phi_star), copy(Phi_star), copy(W_star)
-    #    @. Phi += H.Phis - Phi[1] # lift initial guess to satisfy PHi[1]=Phis
-    for iter in 1:5
-        check(Phi)
-        check(W)
-        check(m)
-        check(S)
-        check(Phi_star)
-        check(W_star)
+    for iter in 1:niter
         rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        check(rPhi)
-        check(rW)
         A, B, R = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
-        check(A)
-        check(B)
-        check(R)
-        #        @info "residuals" rPhi rW R
-        #        TD = SymTridiagonal(B, -A)
-        #        eigenvalues = eigvals(TD) 
-        #        @info extrema(eigenvalues)
-        #        C = cholesky(TD)
-        dPhi = Thomas_flip(A, B, R, false)
-        RR = check_Thomas(A, B, R, dPhi)
-        # dPhi = C \ R
+        dPhi = Thomas(A, B, R, flip_solve)
         @. DPhi += dPhi
-        # @info "Residuals" iter L2(R) L2(RR) L2(rPhi) L2(rW)
-        # @info "Residuals" iter L2(rPhi) L2(rW)
-        @info "Residuals" iter L2(R) L2(rPhi) L2(rW)
-
         @. Phi = Phi_star + DPhi
-        if true # iter == 5
+
+        (iter==1 && verbose ) && @info "Initial residuals" L2(rPhi) L2(rW)
+
+        if update_W || iter==niter
+            # although the reduced residual does not depend on W analytically,
+            # updating W during the iteration improves the final residual and is cheap
             # W = ml * (Phi-Phi_star) / (tau*g^2)
             Nz = length(m)
             let l = 1, ml = m[l] / 2
-                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+                W[l] = inv_tau_g2 * (ml * DPhi[l])
             end
             for l in 2:Nz
                 ml = (m[l - 1] + m[l]) / 2
-                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+                W[l] = inv_tau_g2 * (ml * DPhi[l])
             end
             let l = Nz + 1, ml = m[l - 1] / 2
-                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+                W[l] = inv_tau_g2 * (ml * DPhi[l])
             end
         end
     end
 
-    rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-    @info "Residuals" L2(rPhi) L2(rW)
+    if verbose
+        rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
+        @info "Final residuals" L2(rPhi) L2(rW)
+    end
 
     return Phi, W, m, S
 end
@@ -80,10 +71,6 @@ function residual(H, tau, state, Phi_star, W_star)
     dPhi = @. (Phi_star - Phi) + tau * dHdW
     dW = @. (W_star - W) - tau * dHdPhi
     return dPhi, dW
-end
-
-function solve(H, tau, (Phi, W, m, S), rPhi, rW)
-    return dPhi
 end
 
 function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
@@ -124,7 +111,9 @@ function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
     return A, B, R
 end
 
-function Thomas(A, B, R)
+Thomas(A, B, R, flip_solve) = flip_solve ? Thomas_flip(A,B,R) : Thomas_noflip(A,B,R)
+
+function Thomas_noflip(A, B, R)
     # Thomas algorithm for symmetric tridiagonal system
     Nz = length(A)
     C, D, x = similar(A), similar(B), similar(R)
@@ -151,72 +140,42 @@ function Thomas(A, B, R)
     return x
 end
 
-function Thomas_flip(A, B, R, fl)
-    # Thomas algorithm for symmetric tridiagonal system
-    Nz = length(A)
-    C, D, x = similar(A), similar(B), similar(R)
-    function indices(l)
-        flip(l) = fl ? (2 + Nz - l, 1 + Nz - l) : (l, l)
-        prev(kl) = fl ? kl + 1 : kl - 1
-        ln, kn = flip(l)
-        return ln, prev(ln), kn, prev(kn)
-    end
-    # Forward sweep
-    let (ln, lp, kn, kp) = indices(1)
-        X = inv(B[ln])
-        C[kn] = -A[kn] * X
-        D[ln] = R[ln] * X
-        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
-    end
-    for l in 2:Nz
-        ln, lp, kn, kp = indices(l)
-        X = inv(B[ln] + A[kp] * C[kp])
-        D[ln] = (R[ln] + A[kp] * D[lp]) * X
-        C[kn] = -A[kn] * X
-        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
-    end
-    let (ln, lp, kn, kp) = indices(Nz + 1)
-        X = inv(B[ln] + A[kp] * C[kp])
-        D[ln] = (R[ln] + A[kp] * D[lp]) * X
-        # Back-substitution
-        x[ln] = D[ln]
-        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X B[ln] D[ln]
-    end
-    for l in (Nz + 1):-1:2
-        ln, lp, kn, kp = indices(l)
-        x[lp] = D[lp] - C[kp] * x[ln]
-        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" x[lp]
-    end
-    return x
-end
-
 function Thomas_flip(A, B, R)
-    fl = true
     # Thomas algorithm for symmetric tridiagonal system
     Nz = length(A)
     C, D, x = similar(A), similar(B), similar(R)
     # Forward sweep
-    let ll = Nz+1
+    let ll = Nz + 1
         X = inv(B[ll])
-        C[ll-1] = -A[ll-1] * X
+        C[ll - 1] = -A[ll - 1] * X
         D[ll] = R[ll] * X
     end
     for ll in Nz:-1:2
         X = inv(B[ll] + A[ll] * C[ll])
-        D[ll] = (R[ll] + A[ll] * D[ll+1]) * X
-        C[ll-1] = -A[ll-1] * X
+        D[ll] = (R[ll] + A[ll] * D[ll + 1]) * X
+        C[ll - 1] = -A[ll - 1] * X
     end
-    let ll = 1        
+    let ll = 1
         X = inv(B[ll] + A[ll] * C[ll])
-        D[ll] = (R[ll] + A[ll] * D[ll+1]) * X
+        D[ll] = (R[ll] + A[ll] * D[ll + 1]) * X
         # Back-substitution
         x[ll] = D[ll]
     end
     for ll in 1:Nz
-        x[ll+1] = D[ll+1] - C[ll] * x[ll]
+        x[ll + 1] = D[ll + 1] - C[ll] * x[ll]
     end
     return x
 end
+
+#====================== checks ========================#
+
+L2(x) = sqrt(sum(x->x^2, x))
+mindiff(x) = minimum(k -> x[k + 1] - x[k], 1:(length(x) - 1))
+check(x) =
+    if isnan(L2(x)) || isinf(L2(x))
+        @info x
+        error()
+    end
 
 function check_Thomas(A, B, R, x)
     # linear system is:

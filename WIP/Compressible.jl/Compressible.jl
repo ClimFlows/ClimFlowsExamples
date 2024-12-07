@@ -1,6 +1,7 @@
 # Fully compressible solver using spherical harmonics for horizontal discretization
 
 using Pkg; Pkg.activate(@__DIR__);
+push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 using Revise
 
 includet("setup.jl");
@@ -30,14 +31,15 @@ loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 
 H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
+newton = NewtonSolve(choices.newton)
+
 state = initial(H, case, model.vcoord)
 
 for k=1:10
     @info "==================== Time step $k ======================="
-    tau = 10000.0
+    tau = 100000.0
     Phitau, Wtau = fwd_Euler(H, tau, state)
-    state = bwd_Euler(H, tau, (Phitau, Wtau, state[3], state[4]))
-#    state = bwd_Euler(H, tau, state)
+    state = bwd_Euler(H, newton, tau, (Phitau, Wtau, state[3], state[4]))
 end
 
 #====================================#
