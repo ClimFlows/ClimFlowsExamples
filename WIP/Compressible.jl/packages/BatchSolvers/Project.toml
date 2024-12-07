@@ -1,0 +1,4 @@
+name = "BatchSolvers"
+uuid = "b1fee854-6a6f-4e55-88f3-579b8006333b"
+authors = ["Thomas Dubos <thomas.dubos@polytechnique.edu>"]
+version = "0.1.0"
