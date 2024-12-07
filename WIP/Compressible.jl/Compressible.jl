@@ -32,12 +32,12 @@ loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
 state = initial(H, case, model.vcoord)
 
-for k=1:1
+for k=1:10
     @info "==================== Time step $k ======================="
-    tau = 1000.0
-    #    Phitau, Wtau = fwd_Euler(H, tau, state)
-#    state = bwd_Euler(H, tau, (Phitau, Wtau, state[3], state[4]))
-    state = bwd_Euler(H, tau, state)
+    tau = 10000.0
+    Phitau, Wtau = fwd_Euler(H, tau, state)
+    state = bwd_Euler(H, tau, (Phitau, Wtau, state[3], state[4]))
+#    state = bwd_Euler(H, tau, state)
 end
 
 #====================================#

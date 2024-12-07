@@ -8,17 +8,18 @@ end
 
 square(x) = x * x
 L2(x) = sqrt(sum(square, x))
-mindiff(x) = minimum(k->x[k+1]-x[k], 1:length(x)-1)
-check(x) = if isnan(L2(x)) || isinf(L2(x)) 
-    @info x 
-    error()
-end
+mindiff(x) = minimum(k -> x[k + 1] - x[k], 1:(length(x) - 1))
+check(x) =
+    if isnan(L2(x)) || isinf(L2(x))
+        @info x
+        error()
+    end
 
 function bwd_Euler(H, tau, state)
     (; gravity) = H
     (Phi_star, W_star, m, S) = state
     DPhi, Phi, W = zero(Phi_star), copy(Phi_star), copy(W_star)
-    @. Phi += H.Phis - Phi[1] # lift initial guess to satisfy PHi[1]=Phis
+    #    @. Phi += H.Phis - Phi[1] # lift initial guess to satisfy PHi[1]=Phis
     for iter in 1:5
         check(Phi)
         check(W)
@@ -33,32 +34,39 @@ function bwd_Euler(H, tau, state)
         check(A)
         check(B)
         check(R)
-#        @info "residuals" rPhi rW R
-#        TD = SymTridiagonal(B, -A)
-#        eigenvalues = eigvals(TD) 
-#        @info extrema(eigenvalues)
-#        C = cholesky(TD)
-        dPhi = Thomas_flip(A, B, R, true)
+        #        @info "residuals" rPhi rW R
+        #        TD = SymTridiagonal(B, -A)
+        #        eigenvalues = eigvals(TD) 
+        #        @info extrema(eigenvalues)
+        #        C = cholesky(TD)
+        dPhi = Thomas_flip(A, B, R, false)
         RR = check_Thomas(A, B, R, dPhi)
         # dPhi = C \ R
         @. DPhi += dPhi
-        @info "Residuals" iter L2(R) L2(RR) L2(rPhi) L2(rW)
+        # @info "Residuals" iter L2(R) L2(RR) L2(rPhi) L2(rW)
+        # @info "Residuals" iter L2(rPhi) L2(rW)
+        @info "Residuals" iter L2(R) L2(rPhi) L2(rW)
 
         @. Phi = Phi_star + DPhi
-
-        # W = ml * (Phi-Phi_star) / (tau*g^2)
-        Nz = length(m)
-        let l = 1, ml = m[l] / 2
-            W[l] = (ml * DPhi[l]) / (tau * gravity^2)
-        end
-        for l in 2:Nz
-            ml = (m[l - 1] + m[l]) / 2
-            W[l] = (ml * DPhi[l]) / (tau * gravity^2)
-        end
-        let l = Nz + 1, ml = m[l - 1] / 2
-            W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+        if true # iter == 5
+            # W = ml * (Phi-Phi_star) / (tau*g^2)
+            Nz = length(m)
+            let l = 1, ml = m[l] / 2
+                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+            end
+            for l in 2:Nz
+                ml = (m[l - 1] + m[l]) / 2
+                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+            end
+            let l = Nz + 1, ml = m[l - 1] / 2
+                W[l] = (ml * DPhi[l]) / (tau * gravity^2)
+            end
         end
     end
+
+    rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
+    @info "Residuals" L2(rPhi) L2(rW)
+
     return Phi, W, m, S
 end
 
@@ -81,7 +89,7 @@ end
 function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
     (; gas, gravity, rhob, J) = H
     Nz = length(m)
-    ml, A, B, R = map(x->fill(NaN, size(x)), (Phi, m, Phi, Phi))
+    ml, A, B, R = map(x -> fill(NaN, size(x)), (Phi, m, Phi, Phi))
 
     # ml
     ml[1] = m[1] / 2
@@ -148,36 +156,64 @@ function Thomas_flip(A, B, R, fl)
     Nz = length(A)
     C, D, x = similar(A), similar(B), similar(R)
     function indices(l)
-        flip(l) = fl ? (2+Nz-l, 1+Nz-l) : (l, l)
-        prev(kl) = fl ? kl+1 : kl-1
+        flip(l) = fl ? (2 + Nz - l, 1 + Nz - l) : (l, l)
+        prev(kl) = fl ? kl + 1 : kl - 1
         ln, kn = flip(l)
         return ln, prev(ln), kn, prev(kn)
     end
     # Forward sweep
-    let (ln, lp, kn, kp) = indices(1)        
+    let (ln, lp, kn, kp) = indices(1)
         X = inv(B[ln])
         C[kn] = -A[kn] * X
         D[ln] = R[ln] * X
-#        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
+        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
     end
     for l in 2:Nz
         ln, lp, kn, kp = indices(l)
         X = inv(B[ln] + A[kp] * C[kp])
         D[ln] = (R[ln] + A[kp] * D[lp]) * X
         C[kn] = -A[kn] * X
-#        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
+        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X A[kn] B[ln] C[kn] D[ln]
     end
-    let (ln, lp, kn, kp) = indices(Nz+1)        
+    let (ln, lp, kn, kp) = indices(Nz + 1)
         X = inv(B[ln] + A[kp] * C[kp])
         D[ln] = (R[ln] + A[kp] * D[lp]) * X
         # Back-substitution
         x[ln] = D[ln]
-#        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X B[ln] D[ln]
+        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" X B[ln] D[ln]
     end
-    for l in Nz+1:-1:2
+    for l in (Nz + 1):-1:2
         ln, lp, kn, kp = indices(l)
         x[lp] = D[lp] - C[kp] * x[ln]
-#        @info "ln=$ln lp=$lp kn=$kn kp=$kp" x[lp]
+        #        @info "ln=$ln lp=$lp kn=$kn kp=$kp" x[lp]
+    end
+    return x
+end
+
+function Thomas_flip(A, B, R)
+    fl = true
+    # Thomas algorithm for symmetric tridiagonal system
+    Nz = length(A)
+    C, D, x = similar(A), similar(B), similar(R)
+    # Forward sweep
+    let ll = Nz+1
+        X = inv(B[ll])
+        C[ll-1] = -A[ll-1] * X
+        D[ll] = R[ll] * X
+    end
+    for ll in Nz:-1:2
+        X = inv(B[ll] + A[ll] * C[ll])
+        D[ll] = (R[ll] + A[ll] * D[ll+1]) * X
+        C[ll-1] = -A[ll-1] * X
+    end
+    let ll = 1        
+        X = inv(B[ll] + A[ll] * C[ll])
+        D[ll] = (R[ll] + A[ll] * D[ll+1]) * X
+        # Back-substitution
+        x[ll] = D[ll]
+    end
+    for ll in 1:Nz
+        x[ll+1] = D[ll+1] - C[ll] * x[ll]
     end
     return x
 end
@@ -195,8 +231,8 @@ function check_Thomas(A, B, R, x)
     return R # should be zero !
 end
 
-function trisolve(A,B,R, fl)
+function trisolve(A, B, R, fl)
     flip(x) = fl ? x[length(x):-1:1] : x
     TD = SymTridiagonal(flip(B), flip(-A))
-    return flip(TD\flip(R))
+    return flip(TD \ flip(R))
 end
