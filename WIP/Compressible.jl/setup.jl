@@ -21,6 +21,7 @@ using InteractiveUtils
     using UnicodePlots: heatmap
 #    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
     using Enzyme
+    using LinearAlgebra
 end
 
 # let CFTimeSchemes use our multi-thread manager when updating the model state
@@ -48,7 +49,8 @@ function setup(choices, params, sph, mgr, Equation)
     # stuff independent from initial condition
     gas = params.Fluid(params)
     # vcoord = SigmaCoordinate(params.nz, params.ptop)
-    vcoord = NCARL30(params.nz, params.ptop)
+#    vcoord = NCARL30(params.nz, params.ptop)
+    vcoord = SigmaCoordinate(params.nz, params.ptop)
 
     model = Equation(params, mgr, sph, vcoord, (lon, lat)->case(lon, lat)[2], gas)
     scheme = choices.TimeScheme(model)
