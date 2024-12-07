@@ -151,8 +151,8 @@ function grad(::typeof(total_energy), H::VerticalEnergy, Phi, W, m, S)
         dHdS[k] += exner
     end
     # boundary
-    dHdPhi[end] += ptop
-    dHdPhi[1] += J * rhob * (Phi[1] - Phis) - pb
+    dHdPhi[end] += J*ptop
+    dHdPhi[1] += J * (rhob * (Phi[1] - Phis) - pb)
 
     return dHdPhi, dHdW, dHdm, dHdS
 end
@@ -181,11 +181,24 @@ function initial(H::VerticalEnergy, case, vcoord)
     return Phi, W, m, S
 end
 
-function test_grad(fun, energy, state)
-    dE = grad(fun, energy, state...)
-    E(state...) = fun(energy, state...)
+function test_grad(fun, H, state)
+    dE = grad(fun, H, state...)
+    E(state...) = fun(H, state...)
     dE_ = Enzyme.gradient(Reverse, E, state...)
     for (i, (dHdX, dHdX_)) in enumerate(zip(dE, dE))
         @info fun dHdX ≈ dHdX_ # dHdX[1] dHdX_[1]
     end
+end
+
+function test_canonical(H, state)
+    (Phi, W, m, S) = state
+    (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
+    function f(tau)
+        Phitau = @. Phi - tau * dHdW
+        Wtau = @. W + tau * dHdPhi  
+        return total_energy(H, Phitau, Wtau, m, S)
+    end
+#    dH = Enzyme.autodiff(set_runtime_activity(Forward), Const(f), Const, 0.)
+    dH = Enzyme.autodiff(set_runtime_activity(Reverse), Const(f), Active, Active(0.))
+    return f(0), dH
 end

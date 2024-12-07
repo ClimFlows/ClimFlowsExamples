@@ -3,10 +3,11 @@
 using Pkg; Pkg.activate(@__DIR__);
 using Revise
 
-include("setup.jl");
+includet("setup.jl");
 include("config.jl");
-include("run.jl");
+includet("run.jl");
 includet("vertical.jl")
+includet("backward_Euler.jl")
 
 #============================  main program =========================#
 
@@ -28,16 +29,18 @@ params = (Uplanet = params.radius * params.Omega, params...)
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 
-state = CFHydrostatics.initial_HPE(case, model)
-state0 = deepcopy(state)
-@time tape = simulation(merge(choices, params), loop_HPE, state0);
-
 H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
 state = initial(H, case, model.vcoord)
-# prepare state with non-zero W
-(dPhi, dW, dm, dS) = grad(potential_energy, H, state...)
-state[1] .+= dW
-state[2] .+= dPhi
+
+for k=1:1
+    @info "==================== Time step $k ======================="
+    tau = 1000.0
+    #    Phitau, Wtau = fwd_Euler(H, tau, state)
+#    state = bwd_Euler(H, tau, (Phitau, Wtau, state[3], state[4]))
+    state = bwd_Euler(H, tau, state)
+end
+
+#====================================#
 
 energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
 for fun in energies
@@ -45,6 +48,15 @@ for fun in energies
     grad(fun, H, state...)
     test_grad(fun, H, state)
 end
+@time test_canonical(H, state)
+@time total_energy(H, state...)
+
+#======================#
+
+state = CFHydrostatics.initial_HPE(case, model)
+state0 = deepcopy(state)
+@time tape = simulation(merge(choices, params), loop_HPE, state0);
+
 
 include("movie.jl")
 
