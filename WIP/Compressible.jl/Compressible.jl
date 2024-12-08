@@ -4,7 +4,8 @@ using Pkg; Pkg.activate(@__DIR__);
 push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 using Revise
 
-using CFCompressible
+using CFCompressible: VerticalDynamics as Dyn
+using CFCompressible.VerticalDynamics: VerticalEnergy, total_energy, grad
 using BatchSolvers: SingleSolvers as Solvers
 
 includet("setup.jl");
@@ -33,10 +34,10 @@ params = (Uplanet = params.radius * params.Omega, params...)
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 
-H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
+H = Dyn.VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
 newton = NewtonSolve(choices.newton...)
 
-state = initial(H, case, model.vcoord)
+state = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
 
 for k=1:10
     @info "==================== Time step $k ======================="
@@ -61,7 +62,6 @@ end
 state = CFHydrostatics.initial_HPE(case, model)
 state0 = deepcopy(state)
 @time tape = simulation(merge(choices, params), loop_HPE, state0);
-
 
 include("movie.jl")
 
