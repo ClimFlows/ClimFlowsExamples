@@ -4,6 +4,9 @@ using Pkg; Pkg.activate(@__DIR__);
 push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 using Revise
 
+using CFCompressible
+using BatchSolvers: SingleSolvers as Solvers
+
 includet("setup.jl");
 include("config.jl");
 includet("run.jl");
@@ -31,7 +34,7 @@ loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 
 H = VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
-newton = NewtonSolve(choices.newton)
+newton = NewtonSolve(choices.newton...)
 
 state = initial(H, case, model.vcoord)
 
