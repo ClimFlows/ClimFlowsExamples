@@ -6,7 +6,7 @@ choices = (Fluid=IdealPerfectGas,
            nz=100,
            hyperdiff_n=2,
            remap_period=6,
-           nlat=96,
+           nlat=16,
            ndays=10,
            newton=(niter=3,         # number of iterations
                    flip_solve=true, # direction of tridiagonal solver passes  

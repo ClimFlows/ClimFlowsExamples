@@ -1,5 +1,5 @@
 module CFCompressible
 
-greet() = print("Hello World!")
+include("vertical_dynamics.jl")
 
 end # module CFCompressible
