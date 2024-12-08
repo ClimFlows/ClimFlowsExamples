@@ -1,5 +1,6 @@
 module BatchSolvers
 
-greet() = print("Hello World!")
+include("single_solvers.jl")
+include("tests.jl")
 
 end # module BatchSolvers
