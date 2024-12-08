@@ -5,10 +5,8 @@ struct NewtonSolve
     verbose::Bool
 end
 
-function NewtonSolve(user)
-    def = (niter=5, flip_solve=false, update_W=false, verbose=false)
-    options = merge(def, user)
-    return NewtonSolve(options.niter, options.flip_solve, options.update_W, options.verbose)
+function NewtonSolve(; niter=5, flip_solve=false, update_W=false, verbose=false, other...)
+    return NewtonSolve(niter, flip_solve, update_W, verbose)
 end
 
 function fwd_Euler(H, tau, state)
@@ -29,7 +27,7 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
     for iter in 1:niter
         rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
         A, B, R = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
-        dPhi = Thomas(A, B, R, flip_solve)
+        dPhi = Solvers.Thomas(A, B, R, flip_solve)
         @. DPhi += dPhi
         @. Phi = Phi_star + DPhi
 
@@ -111,62 +109,6 @@ function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
     return A, B, R
 end
 
-Thomas(A, B, R, flip_solve) = flip_solve ? Thomas_flip(A,B,R) : Thomas_noflip(A,B,R)
-
-function Thomas_noflip(A, B, R)
-    # Thomas algorithm for symmetric tridiagonal system
-    Nz = length(A)
-    C, D, x = similar(A), similar(B), similar(R)
-    # Forward sweep
-    let l = 1
-        X = inv(B[l])
-        C[l] = -A[l] * X
-        D[l] = R[l] * X
-    end
-    for l in 2:Nz
-        X = inv(B[l] + A[l - 1] * C[l - 1])
-        D[l] = (R[l] + A[l - 1] * D[l - 1]) * X
-        C[l] = -A[l] * X
-    end
-    let l = Nz + 1
-        X = inv(B[l] + A[l - 1] * C[l - 1])
-        D[l] = (R[l] + A[l - 1] * D[l - 1]) * X
-    end
-    # Back-substitution
-    x[Nz + 1] = D[Nz + 1]
-    for l in Nz:-1:1
-        x[l] = D[l] - C[l] * x[l + 1]
-    end
-    return x
-end
-
-function Thomas_flip(A, B, R)
-    # Thomas algorithm for symmetric tridiagonal system
-    Nz = length(A)
-    C, D, x = similar(A), similar(B), similar(R)
-    # Forward sweep
-    let ll = Nz + 1
-        X = inv(B[ll])
-        C[ll - 1] = -A[ll - 1] * X
-        D[ll] = R[ll] * X
-    end
-    for ll in Nz:-1:2
-        X = inv(B[ll] + A[ll] * C[ll])
-        D[ll] = (R[ll] + A[ll] * D[ll + 1]) * X
-        C[ll - 1] = -A[ll - 1] * X
-    end
-    let ll = 1
-        X = inv(B[ll] + A[ll] * C[ll])
-        D[ll] = (R[ll] + A[ll] * D[ll + 1]) * X
-        # Back-substitution
-        x[ll] = D[ll]
-    end
-    for ll in 1:Nz
-        x[ll + 1] = D[ll + 1] - C[ll] * x[ll]
-    end
-    return x
-end
-
 #====================== checks ========================#
 
 L2(x) = sqrt(sum(x->x^2, x))
@@ -176,22 +118,3 @@ check(x) =
         @info x
         error()
     end
-
-function check_Thomas(A, B, R, x)
-    # linear system is:
-    # -A[l-1]*x[l-1] + B[l]*x[l] - A[l]*x[l+1] = R[l]
-    Nz = length(A)
-    R = copy(R)
-    R[1] -= B[1] * x[1] - A[1] * x[2]
-    for l in 2:Nz
-        R[l] -= B[l] * x[l] - (A[l - 1] * x[l - 1] + A[l] * x[l + 1])
-    end
-    R[Nz + 1] -= B[Nz + 1] * x[Nz + 1] - A[Nz] * x[Nz]
-    return R # should be zero !
-end
-
-function trisolve(A, B, R, fl)
-    flip(x) = fl ? x[length(x):-1:1] : x
-    TD = SymTridiagonal(flip(B), flip(-A))
-    return flip(TD \ flip(R))
-end
