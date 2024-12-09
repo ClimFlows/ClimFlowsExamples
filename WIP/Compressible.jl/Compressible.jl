@@ -6,7 +6,7 @@ using Revise
 
 using CFCompressible
 using CFCompressible: VerticalDynamics as Dyn
-using CFCompressible.VerticalDynamics: VerticalEnergy, total_energy, grad
+using CFCompressible.VerticalDynamics: VerticalEnergy, grad, total_energy, residual, tridiag_problem
 using BatchSolvers: SingleSolvers as Solvers
 
 includet("setup.jl");

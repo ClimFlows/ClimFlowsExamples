@@ -23,6 +23,32 @@ function VerticalEnergy(model, gravity, Phis, pb, rhob)
     return VerticalEnergy(model.gas, gravity, one(Phis), model.vcoord.ptop, Phis, pb, rhob)
 end
 
+#============ initialize profile ============#
+
+function initial(H::VerticalEnergy, vcoord, case, lon, lat)
+    Nz = CFDomains.nlayer(vcoord)
+    ps, Phis = case(lon, lat)
+    W = zeros(Nz + 1)
+    Phi = similar(W)
+    m = zeros(Nz)
+    S = similar(m)
+    for l in 1:(Nz + 1)
+        p = CFDomains.pressure_level(2l - 2, ps, vcoord)
+        Phi[l], _, _, _ = case(lon, lat, p)
+    end
+    for k in 1:Nz
+        p_down = CFDomains.pressure_level(2k - 2, ps, vcoord)
+        p_mid = CFDomains.pressure_level(2k - 1, ps, vcoord)
+        p_up = CFDomains.pressure_level(2k, ps, vcoord)
+        m[k] = p_down - p_up
+        vol = (case(lon, lat, p_up)[1] - case(lon, lat, p_down)[1]) / m[k] # specific volume
+        s = H.gas(:p, :v).conservative_variable(p_mid, vol)
+        S[k] = s * m[k]
+    end
+    return Phi, W, m, S
+end
+
+
 #================== energies ===================#
 
 function boundary_energy(H::VerticalEnergy, Phi, W, m, S)
@@ -172,31 +198,59 @@ function grad(::typeof(total_energy), H::VerticalEnergy, Phi, W, m, S)
     return dHdPhi, dHdW, dHdm, dHdS
 end
 
-#============ initialize profile ============#
+const energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
 
-function initial(H::VerticalEnergy, vcoord, case, lon, lat)
-    Nz = CFDomains.nlayer(vcoord)
-    ps, Phis = case(lon, lat)
-    W = zeros(Nz + 1)
-    Phi = similar(W)
-    m = zeros(Nz)
-    S = similar(m)
-    for l in 1:(Nz + 1)
-        p = CFDomains.pressure_level(2l - 2, ps, vcoord)
-        Phi[l], _, _, _ = case(lon, lat, p)
-    end
-    for k in 1:Nz
-        p_down = CFDomains.pressure_level(2k - 2, ps, vcoord)
-        p_mid = CFDomains.pressure_level(2k - 1, ps, vcoord)
-        p_up = CFDomains.pressure_level(2k, ps, vcoord)
-        m[k] = p_down - p_up
-        vol = (case(lon, lat, p_up)[1] - case(lon, lat, p_down)[1]) / m[k] # specific volume
-        s = H.gas(:p, :v).conservative_variable(p_mid, vol)
-        S[k] = s * m[k]
-    end
-    return Phi, W, m, S
+#============== building blocks of Backward Euler step ============#
+
+# we are solving 
+#    x = x⋆ + τf(x)
+# state is the current guess
+# the residual is (x⋆-x) + τ f(x)
+
+function residual(H, tau, state, Phi_star, W_star)
+    (Phi, W, m, S) = state
+    (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
+    rPhi = @. (Phi_star - Phi) + tau * dHdW
+    rW = @. (W_star - W) - tau * dHdPhi
+    return rPhi, rW
 end
 
-const energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
+function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
+    (; gas, gravity, rhob, J) = H
+    Nz = length(m)
+    ml, A, B, R = map(x -> fill(NaN, size(x)), (Phi, m, Phi, Phi))
+
+    # ml
+    ml[1] = m[1] / 2
+    for l in 2:Nz
+        ml[l] = (m[l - 1] + m[l]) / 2
+    end
+    ml[Nz + 1] = m[Nz] / 2
+
+    # off-diagonal coeffcient A[k]
+    for k in 1:Nz
+        mk = m[k]
+        vol = J * (Phi[k + 1] - Phi[k]) / mk # specific volume
+        consvar = S[k] / m[k] # conservative variable
+        c2 = gas(:v, :consvar).sound_speed2(vol, consvar)
+        A[k] = c2 / mk * (J * tau / vol)^2
+    end
+
+    # diagonal coefficient B[l] and reduced residual R[l]
+    let ml_g2 = (gravity^-2) * ml[1]
+        B[1] = A[1] + ml_g2 + tau^2 * J * rhob # includes spring BC
+        R[1] = ml_g2 * rPhi[1] + tau * rW[1]
+    end
+    for l in 2:Nz
+        ml_g2 = (gravity^-2) * ml[l]
+        B[l] = (A[l] + A[l - 1]) + ml_g2
+        R[l] = ml_g2 * rPhi[l] + tau * rW[l]
+    end
+    let ml_g2 = (gravity^-2) * ml[Nz + 1]
+        B[Nz + 1] = A[Nz] + ml_g2
+        R[Nz + 1] = ml_g2 * rPhi[Nz + 1] + tau * rW[Nz + 1]
+    end
+    return A, B, R
+end
 
 end # module
