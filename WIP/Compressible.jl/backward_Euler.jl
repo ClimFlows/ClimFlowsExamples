@@ -59,56 +59,6 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
     return Phi, W, m, S
 end
 
-function residual(H, tau, state, Phi_star, W_star)
-    # we are solving 
-    #    x = x⋆ + τf(x)
-    # state is the current guess
-    # the residual is τ f(x) + (x⋆-x)
-    (Phi, W, m, S) = state
-    (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
-    dPhi = @. (Phi_star - Phi) + tau * dHdW
-    dW = @. (W_star - W) - tau * dHdPhi
-    return dPhi, dW
-end
-
-function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
-    (; gas, gravity, rhob, J) = H
-    Nz = length(m)
-    ml, A, B, R = map(x -> fill(NaN, size(x)), (Phi, m, Phi, Phi))
-
-    # ml
-    ml[1] = m[1] / 2
-    for l in 2:Nz
-        ml[l] = (m[l - 1] + m[l]) / 2
-    end
-    ml[Nz + 1] = m[Nz] / 2
-
-    # off-diagonal coeffcient A[k]
-    for k in 1:Nz
-        mk = m[k]
-        vol = J * (Phi[k + 1] - Phi[k]) / mk # specific volume
-        consvar = S[k] / m[k] # conservative variable
-        c2 = gas(:v, :consvar).sound_speed2(vol, consvar)
-        A[k] = c2 / mk * (J * tau / vol)^2
-    end
-
-    # diagonal coefficient B[l] and reduced residual R[l]
-    let ml_g2 = (gravity^-2) * ml[1]
-        B[1] = A[1] + ml_g2 + tau^2 * J * rhob # includes spring BC
-        R[1] = ml_g2 * rPhi[1] + tau * rW[1]
-    end
-    for l in 2:Nz
-        ml_g2 = (gravity^-2) * ml[l]
-        B[l] = (A[l] + A[l - 1]) + ml_g2
-        R[l] = ml_g2 * rPhi[l] + tau * rW[l]
-    end
-    let ml_g2 = (gravity^-2) * ml[Nz + 1]
-        B[Nz + 1] = A[Nz] + ml_g2
-        R[Nz + 1] = ml_g2 * rPhi[Nz + 1] + tau * rW[Nz + 1]
-    end
-    return A, B, R
-end
-
 #====================== checks ========================#
 
 L2(x) = sqrt(sum(x->x^2, x))

@@ -20,7 +20,6 @@ using InteractiveUtils
 
     using UnicodePlots: heatmap
 #    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
-    using Enzyme
     using LinearAlgebra
 end
 
