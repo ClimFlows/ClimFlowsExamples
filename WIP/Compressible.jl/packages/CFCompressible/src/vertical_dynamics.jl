@@ -197,4 +197,6 @@ function initial(H::VerticalEnergy, vcoord, case, lon, lat)
     return Phi, W, m, S
 end
 
+const energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
+
 end # module

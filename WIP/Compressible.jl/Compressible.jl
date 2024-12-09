@@ -4,6 +4,7 @@ using Pkg; Pkg.activate(@__DIR__);
 push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 using Revise
 
+using CFCompressible
 using CFCompressible: VerticalDynamics as Dyn
 using CFCompressible.VerticalDynamics: VerticalEnergy, total_energy, grad
 using BatchSolvers: SingleSolvers as Solvers
@@ -11,7 +12,6 @@ using BatchSolvers: SingleSolvers as Solvers
 includet("setup.jl");
 include("config.jl");
 includet("run.jl");
-includet("vertical.jl")
 includet("backward_Euler.jl")
 
 #============================  main program =========================#
@@ -39,23 +39,14 @@ newton = NewtonSolve(choices.newton...)
 
 state = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
 
+@time CFCompressible.Tests.test(H, state)
+
 for k=1:10
     @info "==================== Time step $k ======================="
     tau = 100000.0
     Phitau, Wtau = fwd_Euler(H, tau, state)
     state = bwd_Euler(H, newton, tau, (Phitau, Wtau, state[3], state[4]))
 end
-
-#====================================#
-
-energies = (boundary_energy, internal_energy, potential_energy, kinetic_energy, total_energy)
-for fun in energies
-    fun(H, state...)
-    grad(fun, H, state...)
-    test_grad(fun, H, state)
-end
-@time test_canonical(H, state)
-@time total_energy(H, state...)
 
 #======================#
 
