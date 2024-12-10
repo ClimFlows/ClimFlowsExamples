@@ -7,9 +7,11 @@ using InteractiveUtils
     
     using SIMDMathFunctions
     using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
+    using MutatingOrNot: void, Void
 
     using CFTimeSchemes: scratch_space, tendencies!, advance!
-    using CFTimeSchemes: CFTimeSchemes, RungeKutta4, KinnmarkGray, IVPSolver
+    using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2
+    using CFTimeSchemes: CFTimeSchemes, IVPSolver
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
 
