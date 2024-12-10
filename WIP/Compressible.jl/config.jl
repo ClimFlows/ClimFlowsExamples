@@ -1,5 +1,5 @@
 choices = (Fluid=IdealPerfectGas,
-           TimeScheme=KinnmarkGray{2,5},
+           TimeScheme=TRBDF2, # Midpoint, #BackwardEuler, # KinnmarkGray{2,5},
            consvar=:temperature,
            TestCase=Jablonowski06,
            Prec=Float64,
@@ -26,4 +26,5 @@ params = (
           Omega=7.272e-5,
           hyperdiff_nu=0, # 0.002,
           courant=4.0,
+          dt=1000,
           interval=6 * 3600)
