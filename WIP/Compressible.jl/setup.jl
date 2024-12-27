@@ -10,7 +10,7 @@ using InteractiveUtils
     using MutatingOrNot: void, Void
 
     using CFTimeSchemes: scratch_space, tendencies!, advance!
-    using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2
+    using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2, ARK_TRBDF2
     using CFTimeSchemes: CFTimeSchemes, IVPSolver
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
