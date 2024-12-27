@@ -1,13 +1,13 @@
 choices = (Fluid=IdealPerfectGas,
-           TimeScheme=TRBDF2, # Midpoint, #BackwardEuler, # KinnmarkGray{2,5},
+           TimeScheme=TRBDF2, # ARK_TRBDF2, # Midpoint, #BackwardEuler, # KinnmarkGray{2,5},
            consvar=:temperature,
            TestCase=Jablonowski06,
            Prec=Float64,
            nz=100,
-           hyperdiff_n=2,
-           remap_period=6,
-           nlat=16,
-           ndays=10,
+           hyperdiff_n=3,
+           remap_period=0,
+           nlat=64,
+           ndays=6,
            newton=(niter=3,         # number of iterations
                    flip_solve=true, # direction of tridiagonal solver passes  
                    update_W=true,   # update W during Newton iterations
@@ -25,6 +25,6 @@ params = (
           radius=6.4e6,
           Omega=7.272e-5,
           hyperdiff_nu=0, # 0.002,
-          courant=4.0,
+          courant=3.0,
           dt=1000,
           interval=6 * 3600)
