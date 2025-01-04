@@ -9,7 +9,8 @@ function test_grad(fun, H, state)
     dE = grad(fun, H, state...)
     E(state...) = fun(H, state...)
     dE_ = Enzyme.gradient(Reverse, E, state...)
-    for (i, (dHdX, dHdX_)) in enumerate(zip(dE, dE))
+    for (i, (dHdX, dHdX_)) in enumerate(zip(dE, dE_))
+        @info i dHdX[1] dHdX_[1]
         @test dHdX ≈ dHdX_
     end
 end

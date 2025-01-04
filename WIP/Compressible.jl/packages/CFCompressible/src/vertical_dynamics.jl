@@ -148,10 +148,11 @@ function grad(::typeof(kinetic_energy), H::VerticalEnergy, Phi, W, m, S)
         else
             mm = (m[l - 1] + m[l]) / 2
         end
-        gw = gravity^2 * W[l] / mm
+        gw = gravity^2 * (W[l] / mm)
         dHdW[l] = gw
-        l > 1 && (dHdm[l - 1] += gw / 2)
-        l <= Nz && (dHdm[l] += gw / 2)
+        gw2 = gravity^2 * (W[l] / mm)^2
+        l > 1 && (dHdm[l - 1] -= gw2/4)
+        l <= Nz && (dHdm[l] -= gw2/4)
     end
     return dHdPhi, dHdW, dHdm, dHdS
 end
@@ -172,8 +173,9 @@ function grad(::typeof(total_energy), H::VerticalEnergy, Phi, W, m, S)
         end
         gw = gravity^2 * W[l] / mm
         dHdW[l] += gw
-        l > 1 && (dHdm[l - 1] += gw / 2)
-        l <= Nz && (dHdm[l] += gw / 2)
+        gw2 = gravity^2 * (W[l] / mm)^2
+        l > 1 && (dHdm[l - 1] -= gw2/4)
+        l <= Nz && (dHdm[l] -= gw2/4)
     end
     for k in 1:Nz
         # potential
