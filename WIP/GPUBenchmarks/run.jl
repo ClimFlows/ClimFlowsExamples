@@ -2,8 +2,19 @@
 using Pkg; Pkg.activate(@__DIR__); Pkg.instantiate()
 using InteractiveUtils
 
-using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda
-using oneAPI: oneAPI, oneAPIBackend, oneArray
+CUDA_functional = false
+try
+    using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda
+    global CUDA_functional = CUDA.functional()
+catch e
+end
+
+oneAPI_functional = false
+try
+    using oneAPI: oneAPI, oneAPIBackend, oneArray
+    global oneAPI_functional = oneAPI.functional()
+catch e
+end
 
 using Adapt: Adapt, adapt
 using KernelAbstractions
@@ -55,11 +66,11 @@ end
 
 versioninfo() # check JULIA_EXCLUSIVE and JULIA_NUM_THREADS
 
-if CUDA.functional()
+if CUDA_functional
     include("baseline.jl")
     gpu = KernelAbstractions_GPU(CUDABackend(), CuArray)
     CUDA.versioninfo()
-elseif oneAPI.functional()
+elseif oneAPI_functional
     gpu = KernelAbstractions_GPU(oneAPIBackend(), oneArray)
     oneAPI.versioninfo()
 else
