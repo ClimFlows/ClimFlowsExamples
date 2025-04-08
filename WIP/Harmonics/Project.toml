@@ -1,0 +1,4 @@
+[deps]
+AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
+NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
