@@ -98,7 +98,8 @@ end
 divisor(dt, T) = T / ceil(Int, T / dt)
 
 function simulation(params, info, state0; ndays=params.ndays)
-    diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
+#    diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
+    diag(state) = -reverse(open(diags; model, state).Phi_dot[:, :, 10]; dims=1)
 
     (; model, diags) = info
     @info "Starting simulation on $(model.mgr)."

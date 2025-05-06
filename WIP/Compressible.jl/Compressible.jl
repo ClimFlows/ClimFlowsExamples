@@ -5,40 +5,19 @@ push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_P
 using Revise
 
 using CFCompressible
-using CFCompressible: VerticalDynamics as Dyn
-using CFCompressible.VerticalDynamics: VerticalEnergy, grad, total_energy, residual, tridiag_problem
-using BatchSolvers: SingleSolvers as Solvers
 
 includet("setup.jl");
 include("config.jl");
 includet("run.jl");
-includet("backward_Euler.jl")
-
-#============================  1D model =========================#
-
-struct OneDimModel{Gas, F}
-    H::VerticalEnergy{Gas,F}
-    newton::NewtonSolve
-    m::Vector{F}
-    S::Vector{F}
-end
-
-function CFTimeSchemes.tendencies!(::Void, scr::Void, model::OneDimModel, state, t, tau)
-    (; H, newton, m, S) = model
-    Phi, W = state
-    if tau>0
-        Phi, W = bwd_Euler(H, newton, tau, (Phi, W, m, S))
-    end
-    (dHdPhi, dHdW, _, _) = grad(total_energy, H, Phi, W, m, S)
-    return (dHdW, -dHdPhi), scr
-end
 
 #============================  main program =========================#
 
 threadinfo()
 nthreads = 1 # Threads.nthreads()
 cpu, simd = PlainCPU(), VectorizedCPU(8)
-mgr = MultiThread(simd, nthreads)
+mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
+
+mgr = cpu
 
 @info "Initializing spherical harmonics..."
 (hasproperty(Main, :sph) && sph.nlat == choices.nlat) ||
@@ -53,53 +32,27 @@ params = (Uplanet = params.radius * params.Omega, params...)
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 
-H = Dyn.VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
-newton = NewtonSolve(choices.newton...)
-
-state = (Phi, W, m, S) = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
-@time CFCompressible.Tests.test(H, state)
-
-onedim = OneDimModel(H, newton, m, S)
-solver = IVPSolver(choices.TimeScheme(onedim), params.dt)
-
-Phis=(eltype(Phi))[]
-for k=1:10
-    @info "==================== Time step $k ======================="
-    (Phi, W), t = advance!(void, solver, (Phi, W), 0., 1)
-    push!(Phis, Phi[1])
-end
-@info Phis
-
-if solver.scheme isa Midpoint
-    Phi_end = copy(Phi)
-
-    state = (Phi, W, m, S) = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
-    for k=1:10
-        @info "==================== Time step $k ======================="
-        Phitau, Wtau = fwd_Euler(H, params.dt/2, (Phi, W, m, S))
-        Phi, W = bwd_Euler(H, newton, params.dt/2, (Phitau, Wtau, m, S))
-    end
-    @info Phi ≈ Phi_end
-end
-
 #======================================================================#
 
 let choices = merge(choices, (TimeScheme=CFTimeSchemes.KinnmarkGray{2,5}, ndays=1)),
     params = merge(params, (; courant=4.0))
     loop_HPE, case = setup(choices, params, sph, mgr, HPE)
     (; diags, model) = loop_HPE
-    state = CFHydrostatics.initial_HPE(case, model)
-    state0 = deepcopy(state)
+    state_HPE =  CFHydrostatics.initial_HPE(case, model)
+    state0 = deepcopy(state_HPE)
     @time tape = simulation(merge(choices, params), loop_HPE, state0);
 end;
 
-let choices = merge(choices, (; TimeScheme=ARK_TRBDF2, ndays=1))
-    loop_HPE, case = setup(choices, params, sph, mgr, HPE)
-    (; diags, model) = loop_HPE
-    state = CFHydrostatics.initial_HPE(case, model)
-    state0 = deepcopy(state)
-    @profview tape = simulation(merge(choices, params), loop_HPE, state0);
-end;
+loop_HPE, case = setup(choices, params, sph, mgr, HPE)
+(; diags, model) = loop_HPE
+state_HPE =  CFHydrostatics.initial_HPE(case, model)
+@profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
+
+compressible = CFCompressible.FCE(model, params.gravity)
+state_FCE = CFCompressible.NH_state.diagnose(compressible, diags, state_HPE)
+# loop_FCE, case = setup(choices, params, sph, mgr, CFCompressible.FCE)
+
+# @time tape = simulation(merge(choices, params), loop_HPE, state0);
 
 #=
 include("movie.jl")
