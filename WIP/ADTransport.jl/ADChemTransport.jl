@@ -1,8 +1,8 @@
 # # Inverse modelling
-# Inversion of a forward transport model similar to SpectralTransport.jl
-# The inverse problem searches for the initial condition given the final state.
+# Inversion of a chemisty-transport model similar to SpectralTransport.jl
+# The inverse problem searches for the reaction rate given the final state.
 # This problem is solved by minimizing a loss function
-# whose gradients are computed via reverse AD with Zygote
+# whose gradients are computed via reverse AD with Enzyme
 # and fed into the Adam optimizer from Flux.Optimisers .
 
 # ## Preamble
@@ -11,11 +11,9 @@ import Pkg; Pkg.activate(@__DIR__);
 
 const start_time = time()
 toc(str, t=round(time()-start_time; digits=2)) = "At t=$t s: $str"
-# include("preamble.jl")
-@showtime import ForwardDiff
+
 @showtime import Flux
-@showtime import Zygote
-@showtime import Enzyme
+@showtime using Enzyme
 @showtime import SHTnsSpheres
 @showtime import CFTimeSchemes
 @showtime using UnicodePlots
@@ -28,10 +26,7 @@ using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, void, erase,
 
 using CFTimeSchemes: RungeKutta4, IVPSolver, advance!
 
-# Base.show(io::IO, ::Type{<:ForwardDiff.Tag}) = print(io, "Tag{...}") #src
-
 @info toc("Local definitions")
-# include("time.jl")
 
 #=========== Toy chemistry-transport model ===========#
 
@@ -63,7 +58,6 @@ function ToyChem_tendencies!(dstate, scratch, model::ToyChem, f_spec, t)
     flux_spat = (ucolat=fluxcolat, ulon=fluxlon)
     flux_spec = analysis_vector!(scratch.flux_spec, erase(flux_spat), sph)
     df_adv_spec = divergence!(scratch.df_adv_spec, flux_spec, sph)
-
     # chemistry
     df_chem_spat = model.chemistry(model.params, f_spat) # model.chemistry is non-mutating => no pre-allocation possible
     df_chem_spec = analysis_scalar!(scratch.df_chem_spec, erase(df_chem_spat), sph)
@@ -97,7 +91,7 @@ function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body
 
     source_spat, source_spec = initial_condition(F, sph)
 
-    function forward(params) # non-mutating
+    function forward(params) # non-mutating (Zygote)
         model = ToyChem(sph, uv, source_spec, chem, params)
         scheme = RungeKutta4(model)
         solver = IVPSolver(scheme, dt)
@@ -106,10 +100,10 @@ function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body
         return synthesis_scalar!(void, spec, sph)
     end
 
-    function forward!(params) # mutating
+    function forward!(params) # mutating (Enzyme, ForwardDiff)
         model = ToyChem(sph, uv, source_spec, chem, params)
         scheme = RungeKutta4(model)
-        spec = zero(source_spec)
+        spec = zero(eltype(params))*source_spec
         solver = IVPSolver(scheme, dt, spec, zero(dt))
         advance!(spec, solver, spec, 0.0, Nstep)
         return synthesis_scalar!(void, spec, sph)
@@ -132,32 +126,6 @@ function (loss::Loss)(model)
     predicted = fun(model)
     return sum(abs2, predicted - target)
 end
-
-# ## Double-check that gradients are correct
-# We check the Zygote gradient by computing
-# a directional gradient with ForwardDiff
-
-# complex dot product
-@inline _cprod(z1, z2) = z1.re * z2.re + z1.im * z2.im
-cprod(a::V, b::V) where {V<:Vector{<:Complex}} = @inline mapreduce(_cprod, +, a, b)
-cprod(a::V, b::V) where {V<:Array{<:Real}} = @inline mapreduce(*, +, a, b)
-
-function check_grad(loss, state, dstate)
-    f(x) = loss(@. state + x * dstate)
-    fwd_grad = ForwardDiff.derivative(f, 0.0)
-    @time zyg_grad = cprod(Zygote.gradient(loss, state)[1], dstate)
-    @info typeof(loss) fwd_grad zyg_grad
-    return nothing
-end
-
-function check_grad(loss, tau)
-    fwd_grad = ForwardDiff.derivative(loss, tau)
-    @time (zyg_grad,) = Zygote.gradient(loss, tau)
-    @info typeof(loss) fwd_grad zyg_grad
-    return nothing
-end
-
-zygote_gradient(loss, model) = Zygote.gradient(loss, model)[1]
 
 function enzyme_gradient(loss, model) 
     g = zero(model)
@@ -191,15 +159,6 @@ display(heatmap(final))
 @showtime forward!(params);
 
 let 
-    target = forward(params);
-    loss = Loss(forward, target)
-    guess = [0.0]
-    check_grad(loss, guess, one.(guess))
-    @showtime optimal = train!(loss, guess, zygote_gradient, 100)
-    @info "" optimal
-end;
-
-let 
     target = forward!(params);
     loss = Loss(forward!, target)
     guess = [0.0]
@@ -208,3 +167,40 @@ let
     @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
     @info "" optimal
 end;
+
+#================ Check gradients =================
+
+# ## Double-check that gradients are correct
+# We check the Zygote gradient by computing
+# a directional gradient with ForwardDiff
+
+Base.show(io::IO, ::Type{<:ForwardDiff.Tag}) = print(io, "Tag{...}") #src
+
+# complex dot product
+@inline _cprod(z1, z2) = z1.re * z2.re + z1.im * z2.im
+cprod(a::V, b::V) where {V<:Vector{<:Complex}} = @inline mapreduce(_cprod, +, a, b)
+cprod(a::V, b::V) where {V<:Array{<:Real}} = @inline mapreduce(*, +, a, b)
+
+function check_grad(loss, state, dstate)
+    f(x) = loss(@. state + x * dstate)
+    fwd_grad = ForwardDiff.derivative(f, 0.0)
+    @time zyg_grad = cprod(Zygote.gradient(loss, state)[1], dstate)
+    @info typeof(loss) fwd_grad zyg_grad
+    return nothing
+end
+
+zygote_gradient(loss, model) = Zygote.gradient(loss, model)[1]
+
+@showtime import ForwardDiff
+@showtime import Zygote
+
+let 
+    target = forward(params);
+    loss = Loss(forward, target)
+    guess = [0.0]
+    check_grad(loss, guess, one.(guess))
+    @showtime optimal = train!(loss, guess, zygote_gradient, 100)
+    @info "" optimal
+end;
+
+========================================================#
