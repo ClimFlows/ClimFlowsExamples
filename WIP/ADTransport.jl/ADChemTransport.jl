@@ -17,6 +17,7 @@ toc(str, t=round(time()-start_time; digits=2)) = "At t=$t s: $str"
 @showtime import SHTnsSpheres
 @showtime import CFTimeSchemes
 @showtime using UnicodePlots
+@showtime import OnlineLearningTools
 
 using Flux.Optimise: @withprogress, @logprogress
 
@@ -84,32 +85,39 @@ end
 
 function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
     F(x, y, z, lon, lat) = exp(-1000 * (1 - y)^4) # source field
+    scheme(params) = RungeKutta4(ToyChem(sph, uv, source_spec, chem, params))
 
-    uv = SHTnsSpheres.sample_vector!(void, velocity, sph)
     Nstep, dt = optimal_step(courant / sph.lmax, T)
     @info toc("Initializing ToyChem on $sph") Nstep dt
 
+    uv = SHTnsSpheres.sample_vector!(void, velocity, sph)
     source_spat, source_spec = initial_condition(F, sph)
 
     function forward(params) # non-mutating (Zygote)
-        model = ToyChem(sph, uv, source_spec, chem, params)
-        scheme = RungeKutta4(model)
-        solver = IVPSolver(scheme, dt)
+        solver = IVPSolver(scheme(params), dt)
         spec0 = zero(eltype(params))*source_spec
         spec, t = advance!(void, solver, spec0, zero(dt), Nstep)
         return synthesis_scalar!(void, spec, sph)
     end
 
     function forward!(params) # mutating (Enzyme, ForwardDiff)
-        model = ToyChem(sph, uv, source_spec, chem, params)
-        scheme = RungeKutta4(model)
         spec = zero(eltype(params))*source_spec
-        solver = IVPSolver(scheme, dt, spec, zero(dt))
+        solver = IVPSolver(scheme(params), dt, spec, zero(dt))
         advance!(spec, solver, spec, 0.0, Nstep)
         return synthesis_scalar!(void, spec, sph)
     end
+    
+    function forward!!(params) # using OnlineLearningTools
+        spec = zero(eltype(params))*source_spec
+        scratch = CFTimeSchemes.scratch_space(scheme(params), spec, zero(dt))
+        OnlineLearningTools.repeat(Nstep, spec, scratch, params) do spec, scratch, params
+            CFTimeSchemes.advance!(spec, scheme(params), spec, zero(dt), dt, scratch)
+            return nothing
+        end
+        return synthesis_scalar!(void, spec, sph)
+    end
 
-    return source_spat, forward, forward!
+    return source_spat, forward, forward!, forward!!
 end
 
 #=============== Optimization ============#
@@ -149,18 +157,28 @@ end
 #===================== main program ======================#
 
 sph = SHTnsSpheres.SHTnsSphere(64);
-source0, forward, forward! = setup(sph; T=2.0);
+source0, forward, forward!, forward!! = setup(sph; T=2.0);
 
 params = [1.0]
 display(heatmap(source0))
-final = forward!(params);
+final = forward!!(params);
 display(heatmap(final))
-
-@showtime forward!(params);
 
 let 
     target = forward!(params);
+    @showtime forward!(params);
     loss = Loss(forward!, target)
+    guess = [0.0]
+    @show  loss(guess)
+    @showtime enzyme_gradient(loss, guess)
+    @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
+    @info "" optimal
+end;
+
+let 
+    target = forward!!(params);
+    @showtime forward!!(params);
+    loss = Loss(forward!!, target)
     guess = [0.0]
     @show  loss(guess)
     @showtime enzyme_gradient(loss, guess)
