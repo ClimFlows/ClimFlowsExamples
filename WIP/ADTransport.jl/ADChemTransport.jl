@@ -1,17 +1,14 @@
 # # Inverse modelling
 # Inversion of a chemisty-transport model similar to SpectralTransport.jl
-# The inverse problem searches for the reaction rate given the final state.
+# The inverse problem searches for the reaction rate given a time-dependent reference solution.
 # This problem is solved by minimizing a loss function
 # whose gradients are computed via reverse AD with Enzyme
-# and fed into the Adam optimizer from Flux.Optimisers .
-
-# ## Preamble
-const debug=false
-import Pkg; Pkg.activate(@__DIR__);
+# and fed into the Adam optimizer from Flux.Optimisers.
 
 const start_time = time()
 toc(str, t=round(time()-start_time; digits=2)) = "At t=$t s: $str"
 
+import Pkg; Pkg.activate(@__DIR__);
 @showtime import Flux
 @showtime using Enzyme
 @showtime import SHTnsSpheres
@@ -25,9 +22,57 @@ using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, void, erase,
                         synthesis_scalar!, analysis_scalar!, analysis_vector!, divergence!,
                         sample_vector!, sample_scalar!
 
-using CFTimeSchemes: RungeKutta4, IVPSolver, advance!
+using CFTimeSchemes: RungeKutta4, advance!
 
 @info toc("Local definitions")
+
+#=============== Optimization ============#
+
+# In ML parlance, "model" is the set of coefficients to be optimized.
+# Adapted from `Flux.Optimise.train!`.
+
+function train!(loss, model, grad, N, optim=Flux.Adam(0.1))
+    tree = Flux.Optimisers.setup(optim, model)
+    @info "initial loss" loss(model) grad(loss, model)
+    @withprogress for i = 1:N
+        tree, model = Flux.Optimisers.update!(tree, model, grad(loss, model))
+        Flux.@logprogress i / N
+    end
+    @info "final loss" loss(model)
+    return model
+end
+
+function enzyme_gradient(loss, model) 
+    g = zero(model)
+    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(model, g))
+    return g
+end
+
+#============= Time-integrated loss (belongs to OnlineLearningTools =============#
+
+struct OnlineLoss{Fun!, Scratch, State, Loss}
+    fun!::Fun!
+    scratch::Scratch
+    initial::State
+    Nstep::Int
+    loss::Loss
+end
+
+rsimilar(x) = similar(x)
+rsimilar(x::Union{<:Tuple, <:NamedTuple}) = map(rsimilar, x)
+
+function (loss::OnlineLoss)(model::Array{F}) where F
+    (; fun!, scratch, initial, Nstep) = loss
+    state = one(F)*initial # for ForwardDiff
+    l = zero(F)
+
+    scratch = rsimilar(scratch)
+    for i in 1:Nstep
+        fun!(i-1, state, scratch, model) # advance state from i-1 to i
+        l += loss.loss(i, state)
+    end
+    return l
+end
 
 #=========== Toy chemistry-transport model ===========#
 
@@ -69,7 +114,7 @@ function ToyChem_tendencies!(dstate, scratch, model::ToyChem, f_spec, t)
     return dstate, scratch
 end
 
-#================ Model setup =============#
+#================ Setup inverse problem =============#
 
 solid_body(x,y,z,lon,lat) = (sqrt(1-z*z), 0.)  # zonal solid-body "wind"
 
@@ -83,14 +128,7 @@ function optimal_step(dt, T)
     return N, T/N
 end
 
-struct L2Loss{State}
-    targets::Vector{State}
-end
-(loss::L2Loss{State})(i, state::State) where State = sum(abs2, state - loss.targets[i])
-
 function setup_online(sph, params; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
-    # (model, scheme, (; sph, dt, Nstep, source_spec))
-
     F(x, y, z, lon, lat) = exp(-1000 * (1 - y)^4) # source field
 
     Nstep, dt = optimal_step(courant / sph.lmax, T)
@@ -111,149 +149,20 @@ function setup_online(sph, params; lmax = sph.lmax, courant = 2.0, T=1.0, veloci
     end
     display(heatmap(synthesis_scalar!(void, state, sph)))
 
-    return scheme, OnlineLoss(scratch, zero(source_spec), Nstep, L2Loss(targets)) do i, state, scratch, model
+    loss(i, state) = sum(abs2, state - targets[i])
+
+    return scheme, OnlineLoss(scratch, zero(source_spec), Nstep, loss) do i, state, scratch, model
         CFTimeSchemes.advance!(state, scheme(model), state, zero(dt), dt, scratch)
         return nothing
     end
 end
 
-#=
-function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
-
-    function forward(params) # non-mutating (Zygote)
-        solver = IVPSolver(scheme(params), dt)
-        spec0 = zero(eltype(params))*source_spec
-        spec, t = advance!(void, solver, spec0, zero(dt), Nstep)
-        return synthesis_scalar!(void, spec, sph)
-    end
-
-    function forward!(params) # mutating (Enzyme, ForwardDiff)
-        spec = zero(eltype(params))*source_spec
-        solver = IVPSolver(scheme(params), dt, spec, zero(dt))
-        advance!(spec, solver, spec, 0.0, Nstep)
-        return synthesis_scalar!(void, spec, sph)
-    end
-    
-    function forward!!(params) # using OnlineLearningTools
-        spec = zero(eltype(params))*source_spec
-        scratch = CFTimeSchemes.scratch_space(scheme(params), spec, zero(dt))
-        OnlineLearningTools.repeat(Nstep, spec, scratch, params) do spec, scratch, params
-            CFTimeSchemes.advance!(spec, scheme(params), spec, zero(dt), dt, scratch)
-            return nothing
-        end
-        return synthesis_scalar!(void, spec, sph)
-    end
-
-    return scheme, source_spat, forward, forward!, forward!!
-end
-=#
-
-#=============== Optimization ============#
-
-# In ML parlance, "model" is the set of coefficients to be optimized.
-
-#=
-struct Loss{Fun,Target}
-    fun::Fun
-    target::Target
-end
-
-function (loss::Loss)(model)
-    (; fun, target) = loss
-    predicted = fun(model)
-    return sum(abs2, predicted - target)
-end
-
-=#
-
-
-# Adapted from `Flux.Optimise.train!`.
-
-function train!(loss, model, grad, N, optim=Flux.Adam(0.1))
-    tree = Flux.Optimisers.setup(optim, model)
-    @info "initial loss" loss(model) grad(loss, model)
-    @withprogress for i = 1:N
-        tree, model = Flux.Optimisers.update!(tree, model, grad(loss, model))
-        Flux.@logprogress i / N
-    end
-    @info "final loss" loss(model)
-    return model
-end
-
 #===================== main program ======================#
 
-sph = SHTnsSpheres.SHTnsSphere(64);
+@info toc("Start")
 
-#=
-
-scheme, source0, forward, forward!, forward!! = setup(sph; T=0.5);
-
-params = [1.0]
-display(heatmap(source0))
-final = forward!!(params);
-display(heatmap(final))
-
-let 
-    target = forward!(params);
-    @showtime forward!(params);
-    loss = Loss(forward!, target)
-    guess = [0.0]
-    @show  loss(guess)
-    @showtime enzyme_gradient(loss, guess)
-    @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
-    @info "" optimal
-end;
-
-let 
-    target = forward!!(params);
-    @showtime forward!!(params);
-    loss = Loss(forward!!, target)
-    guess = [0.0]
-    @show  loss(guess)
-    @showtime enzyme_gradient(loss, guess)
-    @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
-    @info "" optimal
-end;
-=#
-
-#===================== time-integrated loss ======================#
-
-# belongs to OnlineLearningTools
-
-struct OnlineLoss{Fun!, Scratch, State, Loss}
-    fun!::Fun!
-    scratch::Scratch
-    initial::State
-    Nstep::Int
-    loss::Loss
-end
-
-rsimilar(x) = similar(x)
-rsimilar(x::Union{<:Tuple, <:NamedTuple}) = map(rsimilar, x)
-
-function (loss::OnlineLoss)(model::Array{F}) where F
-    (; fun!, scratch, initial, Nstep) = loss
-    state = one(F)*initial # for ForwardDiff
-    l = zero(F)
-
-    scratch = rsimilar(scratch)
-    for i in 1:Nstep
-        fun!(i-1, state, scratch, model) # advance state from i-1 to i
-        l += loss.loss(i, state)
-    end
-    return l
-end
-
-function enzyme_gradient(loss, model) 
-    g = zero(model)
-    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(model, g))
-    return g
-end
-
+@showtime sph = SHTnsSpheres.SHTnsSphere(64);
 params, guess = ([1.0], [0.0])
-GC.gc()
-#    scheme, source0, forward, forward!, forward!! = setup(sph; T=2.0);
-#    loss = setup_online(params, scheme, forward);
 @showtime (scheme, loss) = setup_online(sph, params ; T=2.0);
 
 loss(guess);
@@ -261,41 +170,4 @@ loss(guess);
 enzyme_gradient(loss, guess);
 @showtime enzyme_gradient(loss, guess)
 @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
-@info "" optimal
-
-#================ Check gradients =================
-
-# ## Double-check that gradients are correct
-# We check the Zygote gradient by computing
-# a directional gradient with ForwardDiff
-
-Base.show(io::IO, ::Type{<:ForwardDiff.Tag}) = print(io, "Tag{...}") #src
-
-# complex dot product
-@inline _cprod(z1, z2) = z1.re * z2.re + z1.im * z2.im
-cprod(a::V, b::V) where {V<:Vector{<:Complex}} = @inline mapreduce(_cprod, +, a, b)
-cprod(a::V, b::V) where {V<:Array{<:Real}} = @inline mapreduce(*, +, a, b)
-
-function check_grad(loss, state, dstate)
-    f(x) = loss(@. state + x * dstate)
-    fwd_grad = ForwardDiff.derivative(f, 0.0)
-    @time zyg_grad = cprod(Zygote.gradient(loss, state)[1], dstate)
-    @info typeof(loss) fwd_grad zyg_grad
-    return nothing
-end
-
-zygote_gradient(loss, model) = Zygote.gradient(loss, model)[1]
-
-@showtime import ForwardDiff
-@showtime import Zygote
-
-let 
-    target = forward(params);
-    loss = Loss(forward, target)
-    guess = [0.0]
-    check_grad(loss, guess, one.(guess))
-    @showtime optimal = train!(loss, guess, zygote_gradient, 100)
-    @info "" optimal
-end;
-
-========================================================#
+@info toc("Done") optimal
