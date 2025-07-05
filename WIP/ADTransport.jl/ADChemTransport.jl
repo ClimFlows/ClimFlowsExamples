@@ -83,7 +83,14 @@ function optimal_step(dt, T)
     return N, T/N
 end
 
-function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
+struct L2Loss{State}
+    targets::Vector{State}
+end
+(loss::L2Loss{State})(i, state::State) where State = sum(abs2, state - loss.targets[i])
+
+function setup_online(sph, params; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
+    # (model, scheme, (; sph, dt, Nstep, source_spec))
+
     F(x, y, z, lon, lat) = exp(-1000 * (1 - y)^4) # source field
 
     Nstep, dt = optimal_step(courant / sph.lmax, T)
@@ -91,7 +98,27 @@ function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body
 
     uv = SHTnsSpheres.sample_vector!(void, velocity, sph)
     source_spat, source_spec = initial_condition(F, sph)
+    display(heatmap(source_spat))
+
+    state = zero(source_spec)
     scheme(params) = RungeKutta4(ToyChem(sph, uv, source_spec, chem, params))
+    sch = scheme(params)
+    scratch = CFTimeSchemes.scratch_space(sch, state, zero(dt))
+    targets = typeof(state)[]
+    for i in 1:Nstep
+        CFTimeSchemes.advance!(state, sch, state, zero(dt), dt, scratch)
+        push!(targets, copy(state))
+    end
+    display(heatmap(synthesis_scalar!(void, state, sph)))
+
+    return scheme, OnlineLoss(scratch, zero(source_spec), Nstep, L2Loss(targets)) do i, state, scratch, model
+        CFTimeSchemes.advance!(state, scheme(model), state, zero(dt), dt, scratch)
+        return nothing
+    end
+end
+
+#=
+function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body, chem=quadratic_reaction)
 
     function forward(params) # non-mutating (Zygote)
         solver = IVPSolver(scheme(params), dt)
@@ -119,27 +146,26 @@ function setup(sph; lmax = sph.lmax, courant = 2.0, T=1.0, velocity = solid_body
 
     return scheme, source_spat, forward, forward!, forward!!
 end
+=#
 
 #=============== Optimization ============#
 
 # In ML parlance, "model" is the set of coefficients to be optimized.
 
+#=
 struct Loss{Fun,Target}
     fun::Fun
     target::Target
 end
 
 function (loss::Loss)(model)
-    (; fun!, target) = loss
+    (; fun, target) = loss
     predicted = fun(model)
     return sum(abs2, predicted - target)
 end
 
-function enzyme_gradient(loss, model) 
-    g = zero(model)
-    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(model, g))
-    return g
-end
+=#
+
 
 # Adapted from `Flux.Optimise.train!`.
 
@@ -158,9 +184,10 @@ end
 
 sph = SHTnsSpheres.SHTnsSphere(64);
 
+#=
+
 scheme, source0, forward, forward!, forward!! = setup(sph; T=0.5);
 
-#=
 params = [1.0]
 display(heatmap(source0))
 final = forward!!(params);
@@ -191,6 +218,8 @@ end;
 
 #===================== time-integrated loss ======================#
 
+# belongs to OnlineLearningTools
+
 struct OnlineLoss{Fun!, Scratch, State, Loss}
     fun!::Fun!
     scratch::Scratch
@@ -198,11 +227,6 @@ struct OnlineLoss{Fun!, Scratch, State, Loss}
     Nstep::Int
     loss::Loss
 end
-
-struct L2Loss{State}
-    targets::Vector{State}
-end
-(loss::L2Loss{State})(i, state::State) where State = sum(abs2, state - loss.targets[i])
 
 rsimilar(x) = similar(x)
 rsimilar(x::Union{<:Tuple, <:NamedTuple}) = map(rsimilar, x)
@@ -220,33 +244,24 @@ function (loss::OnlineLoss)(model::Array{F}) where F
     return l
 end
 
-function setup_online(model, scheme, (; sph, dt, Nstep, source_spec))
-    state = zero(source_spec)
-    state_spat() = synthesis_scalar!(void, state, sph)
-    targets = typeof(state)[]
-
-    scratch = CFTimeSchemes.scratch_space(scheme(model), state, zero(dt))
-    for i in 1:Nstep
-        CFTimeSchemes.advance!(state, scheme(model), state, zero(dt), dt, scratch)
-        push!(targets, copy(state))
-    end
-    display(heatmap(state_spat()))
-
-    return OnlineLoss(scratch, zero(source_spec), Nstep, L2Loss(targets)) do i, state, scratch, model
-        CFTimeSchemes.advance!(state, scheme(model), state, zero(dt), dt, scratch)
-        return nothing
-    end
+function enzyme_gradient(loss, model) 
+    g = zero(model)
+    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(model, g))
+    return g
 end
 
-let (params, guess) = ([1.0], [0.0])
-    GC.gc()
-    scheme, source0, forward, forward!, forward!! = setup(sph; T=2.0);
-    loss = setup_online(params, scheme, forward);
-    @showtime loss(guess)
-    @showtime enzyme_gradient(loss, guess)
-    @showtime optimal = train!(loss, guess, enzyme_gradient, 100)
-    @info "" optimal
-end
+params, guess = ([1.0], [0.0])
+GC.gc()
+#    scheme, source0, forward, forward!, forward!! = setup(sph; T=2.0);
+#    loss = setup_online(params, scheme, forward);
+@showtime (scheme, loss) = setup_online(sph, params ; T=2.0);
+
+loss(guess);
+@showtime loss(guess)
+enzyme_gradient(loss, guess);
+@showtime enzyme_gradient(loss, guess)
+@showtime optimal = train!(loss, guess, enzyme_gradient, 100)
+@info "" optimal
 
 #================ Check gradients =================
 
