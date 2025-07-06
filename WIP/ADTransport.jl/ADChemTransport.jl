@@ -28,51 +28,55 @@ using CFTimeSchemes: RungeKutta4, advance!
 
 #=============== Optimization ============#
 
-# In ML parlance, "model" is the set of coefficients to be optimized.
 # Adapted from `Flux.Optimise.train!`.
 
-function train!(loss, model, grad, N, optim=Flux.Adam(0.1))
-    tree = Flux.Optimisers.setup(optim, model)
-    @info "initial loss" loss(model) grad(loss, model)
+function train!(loss, params, grad, N, optim=Flux.Adam(0.1))
+    tree = Flux.Optimisers.setup(optim, params)
+    @info "initial loss" loss(params) grad(loss, params)
     @withprogress for i = 1:N
-        tree, model = Flux.Optimisers.update!(tree, model, grad(loss, model))
+        tree, params = Flux.Optimisers.update!(tree, params, grad(loss, params))
         Flux.@logprogress i / N
     end
-    @info "final loss" loss(model)
-    return model
+    @info "final loss" loss(params)
+    return params
 end
 
-function enzyme_gradient(loss, model) 
-    g = zero(model)
-    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(model, g))
+function enzyme_gradient(loss, params) 
+    g = zero(params)
+    Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(params, g))
     return g
 end
 
 #============= Time-integrated loss (belongs to OnlineLearningTools =============#
 
+#= 
+
 struct OnlineLoss{Fun!, Scratch, State, Loss}
     fun!::Fun!
-    scratch::Scratch
-    initial::State
     Nstep::Int
+    initial::State
+    scratch::Scratch
     loss::Loss
 end
 
 rsimilar(x) = similar(x)
 rsimilar(x::Union{<:Tuple, <:NamedTuple}) = map(rsimilar, x)
 
-function (loss::OnlineLoss)(model::Array{F}) where F
-    (; fun!, scratch, initial, Nstep) = loss
-    state = one(F)*initial # for ForwardDiff
-    l = zero(F)
+(loss::OnlineLoss)(params) = OnlineLearningTools.online_loss(loss, params)
+(loss::OnlineLoss)(params) = online_loss(loss, params)
 
-    scratch = rsimilar(scratch)
-    for i in 1:Nstep
-        fun!(i-1, state, scratch, model) # advance state from i-1 to i
+function online_loss(loss, params)
+    state = 1*loss.initial # state = copy(loss.initial) triggers a strange Enzyme bug !!
+    scratch = rsimilar(loss.scratch)
+    l = loss.loss(0, state)
+    for i in 1:loss.Nstep
+        loss.fun!(i-1, state, scratch, params) # advance state from i-1 to i
         l += loss.loss(i, state)
     end
     return l
 end
+
+=#
 
 #=========== Toy chemistry-transport model ===========#
 
@@ -102,7 +106,8 @@ function ToyChem_tendencies!(dstate, scratch, model::ToyChem, f_spec, t)
     fluxcolat = @. scratch.fluxcolat = -f_spat*model.uv.ucolat
     # flux divergence
     flux_spat = (ucolat=fluxcolat, ulon=fluxlon)
-    flux_spec = analysis_vector!(scratch.flux_spec, erase(flux_spat), sph)
+#    flux_spec = analysis_vector!(scratch.flux_spec, erase(flux_spat), sph)
+    flux_spec = analysis_vector!(scratch.flux_spec, flux_spat, sph)
     df_adv_spec = divergence!(scratch.df_adv_spec, flux_spec, sph)
     # chemistry
     df_chem_spat = model.chemistry(model.params, f_spat) # model.chemistry is non-mutating => no pre-allocation possible
@@ -142,17 +147,18 @@ function setup_online(sph, params; lmax = sph.lmax, courant = 2.0, T=1.0, veloci
     scheme(params) = RungeKutta4(ToyChem(sph, uv, source_spec, chem, params))
     sch = scheme(params)
     scratch = CFTimeSchemes.scratch_space(sch, state, zero(dt))
-    targets = typeof(state)[]
+    targets = [state] # include initial state
     for i in 1:Nstep
         CFTimeSchemes.advance!(state, sch, state, zero(dt), dt, scratch)
         push!(targets, copy(state))
     end
     display(heatmap(synthesis_scalar!(void, state, sph)))
 
-    loss(i, state) = sum(abs2, state - targets[i])
+    loss(i, state) = sum(abs2, state - targets[i+1])
 
-    return scheme, OnlineLoss(scratch, zero(source_spec), Nstep, loss) do i, state, scratch, model
-        CFTimeSchemes.advance!(state, scheme(model), state, zero(dt), dt, scratch)
+#    return scheme, OnlineLoss(Nstep, zero(source_spec), scratch, loss) do i, state, scratch, params
+    return scheme, OnlineLearningTools.OnlineLoss(Nstep, zero(source_spec), scratch, loss) do i, state, scratch, params
+        CFTimeSchemes.advance!(state, scheme(params), state, zero(dt), dt, scratch)
         return nothing
     end
 end
