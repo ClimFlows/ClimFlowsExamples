@@ -9,6 +9,7 @@ const start_time = time()
 toc(str, t=round(time()-start_time; digits=2)) = "At t=$t s: $str"
 
 import Pkg; Pkg.activate(@__DIR__);
+@showtime import TerminalLoggers: TerminalLogger
 @showtime import Flux
 @showtime using Enzyme
 @showtime import SHTnsSpheres
@@ -26,6 +27,9 @@ using CFTimeSchemes: RungeKutta4, advance!
 
 @info toc("Local definitions")
 
+using Logging: global_logger
+global_logger(TerminalLogger())
+
 #=============== Optimization ============#
 
 # Adapted from `Flux.Optimise.train!`.
@@ -35,7 +39,7 @@ function train!(loss, params, grad, N, optim=Flux.Adam(0.1))
     @info "initial loss" loss(params) grad(loss, params)
     @withprogress for i = 1:N
         tree, params = Flux.Optimisers.update!(tree, params, grad(loss, params))
-        Flux.@logprogress i / N
+        @logprogress i / N
     end
     @info "final loss" loss(params)
     return params
@@ -46,37 +50,6 @@ function enzyme_gradient(loss, params)
     Enzyme.autodiff(set_runtime_activity(Reverse), Const(loss), Active, Duplicated(params, g))
     return g
 end
-
-#============= Time-integrated loss (belongs to OnlineLearningTools =============#
-
-#= 
-
-struct OnlineLoss{Fun!, Scratch, State, Loss}
-    fun!::Fun!
-    Nstep::Int
-    initial::State
-    scratch::Scratch
-    loss::Loss
-end
-
-rsimilar(x) = similar(x)
-rsimilar(x::Union{<:Tuple, <:NamedTuple}) = map(rsimilar, x)
-
-(loss::OnlineLoss)(params) = OnlineLearningTools.online_loss(loss, params)
-(loss::OnlineLoss)(params) = online_loss(loss, params)
-
-function online_loss(loss, params)
-    state = 1*loss.initial # state = copy(loss.initial) triggers a strange Enzyme bug !!
-    scratch = rsimilar(loss.scratch)
-    l = loss.loss(0, state)
-    for i in 1:loss.Nstep
-        loss.fun!(i-1, state, scratch, params) # advance state from i-1 to i
-        l += loss.loss(i, state)
-    end
-    return l
-end
-
-=#
 
 #=========== Toy chemistry-transport model ===========#
 
@@ -106,8 +79,7 @@ function ToyChem_tendencies!(dstate, scratch, model::ToyChem, f_spec, t)
     fluxcolat = @. scratch.fluxcolat = -f_spat*model.uv.ucolat
     # flux divergence
     flux_spat = (ucolat=fluxcolat, ulon=fluxlon)
-#    flux_spec = analysis_vector!(scratch.flux_spec, erase(flux_spat), sph)
-    flux_spec = analysis_vector!(scratch.flux_spec, flux_spat, sph)
+    flux_spec = analysis_vector!(scratch.flux_spec, erase(flux_spat), sph)
     df_adv_spec = divergence!(scratch.df_adv_spec, flux_spec, sph)
     # chemistry
     df_chem_spat = model.chemistry(model.params, f_spat) # model.chemistry is non-mutating => no pre-allocation possible
@@ -146,20 +118,17 @@ function setup_online(sph, params; lmax = sph.lmax, courant = 2.0, T=1.0, veloci
     state = zero(source_spec)
     scheme(params) = RungeKutta4(ToyChem(sph, uv, source_spec, chem, params))
     sch = scheme(params)
-    scratch = CFTimeSchemes.scratch_space(sch, state, zero(dt))
-    targets = [state] # include initial state
+    scratch = CFTistmeSchemes.scratch_space(sch, state, zero(dt))
+    targets = [copy(state)] # include initial state
     for i in 1:Nstep
         CFTimeSchemes.advance!(state, sch, state, zero(dt), dt, scratch)
         push!(targets, copy(state))
     end
     display(heatmap(synthesis_scalar!(void, state, sph)))
 
-    loss(i, state) = sum(abs2, state - targets[i+1])
-
-#    return scheme, OnlineLoss(Nstep, zero(source_spec), scratch, loss) do i, state, scratch, params
-    return scheme, OnlineLearningTools.OnlineLoss(Nstep, zero(source_spec), scratch, loss) do i, state, scratch, params
+    return scheme, OnlineLearningTools.OnlineLoss(Nstep, zero(source_spec), scratch) do i, state, scratch, params
         CFTimeSchemes.advance!(state, scheme(params), state, zero(dt), dt, scratch)
-        return nothing
+        return sum(abs2, state - targets[i+1])
     end
 end
 
@@ -169,11 +138,12 @@ end
 
 @showtime sph = SHTnsSpheres.SHTnsSphere(64);
 params, guess = ([1.0], [0.0])
-@showtime (scheme, loss) = setup_online(sph, params ; T=2.0);
+(scheme, loss) = setup_online(sph, params ; T=3.0);
 
 loss(guess);
 @showtime loss(guess)
-enzyme_gradient(loss, guess);
+enzyme_gradient(loss, guess)
 @showtime enzyme_gradient(loss, guess)
-@showtime optimal = train!(loss, guess, enzyme_gradient, 100)
+
+optimal = train!(loss, guess, enzyme_gradient, 100)
 @info toc("Done") optimal
