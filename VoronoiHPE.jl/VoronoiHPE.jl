@@ -5,7 +5,7 @@
 using Pkg; Pkg.activate(@__DIR__)
 using InteractiveUtils
 
-@time_imports using CUDA, oneAPI, KernelAbstractions, Adapt, ManagedLoops, LoopManagers
+@time_imports using ManagedLoops, LoopManagers
 
 include("setup.jl")
 include("NCARL30.jl")

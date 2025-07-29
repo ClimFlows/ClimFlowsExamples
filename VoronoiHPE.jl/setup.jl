@@ -10,7 +10,6 @@
 
     # lightweight dependencies
     using SIMDMathFunctions
-    using SHTnsSpheres: SHTnsSphere
     using Strided: Strided, @strided
     using BenchmarkTools: @btime, @benchmark
 
@@ -21,7 +20,7 @@
     using CFPlanets: ShallowTradPlanet
     using ClimFluids: IdealPerfectGas
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
-    using ClimFlowsTestCases: Jablonowski06, testcase, describe, initial_flow, initial_surface
+    using ClimFlowsTestCases: DCMIP, Isothermal, Jablonowski06, describe, initial
 end
 
 # multi-thread transposition
@@ -42,7 +41,7 @@ end
 rmap(fun, x) = Recurser(fun)(x)
 
 function setup(sphere, choices, params)
-    case = testcase(choices.TestCase, choices.precision; params.testcase...)
+    case = choices.TestCase(choices.precision; params.testcase...)
     params = merge(choices, case.params, params)
     ## physical parameters needed to run the model
     @info case
@@ -51,15 +50,10 @@ function setup(sphere, choices, params)
     gas = params.Fluid(params)
     vcoord = choices.coordinate(params.nz, params.ptop)
 
-    surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
-    model = HPE(params, choices.cpu, sphere, vcoord, surface_geopotential, gas)
+    model = HPE(params, choices.cpu, sphere, vcoord, (lon, lat)->initial(case, lon, lat)[2], gas)
 
     ## initial condition & standard diagnostics
-    state = let
-        init(lon, lat) = initial_surface(lon, lat, case)
-        init(lon, lat, p) = initial_flow(lon, lat, p, case)
-        CFHydrostatics.initial_HPE(init, model)
-    end
+    state = CFHydrostatics.initial_HPE((args...)->initial(case, args...), model)
 
     return model, diagnostics(model), state
 end

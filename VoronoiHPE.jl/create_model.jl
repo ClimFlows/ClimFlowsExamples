@@ -1,14 +1,32 @@
 cpu, gpu = choices.cpu, choices.cpu
 
 if choices.try_gpu
-    if oneAPI.functional()
-        @info "Functional oneAPI GPU detected !"
-        oneAPI.versioninfo()
-        gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.blocks.oneAPI)
-    elseif CUDA.functional()
-        @info "Functional CUDA GPU detected !"
-        CUDA.versioninfo()
-        gpu = LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.blocks.CUDA)
+    @time_imports using Adapt, KernelAbstractions
+
+    if gpu == cpu
+        try
+            @time_imports using oneAPI
+            if oneAPI.functional()
+                @info "Functional oneAPI GPU detected !"
+                oneAPI.versioninfo()
+                global gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.blocks.oneAPI)
+            end
+        catch
+            @info "oneAPI not found in the current project, add it if you want oneAPI GPU acceleration"
+        end
+    end
+
+    if gpu == cpu
+        try
+            @time_imports using CUDA
+            if CUDA.functional()
+                @info "Functional CUDA GPU detected !"
+                CUDA.versioninfo()
+                global gpu = LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.blocks.CUDA)
+            end
+        catch
+            @info "CUDA not found in the current project, add it if you want CUDA GPU acceleration"
+        end
     end
 end
 
@@ -22,6 +40,7 @@ end;
 vsphere = model.domain.layer
 
 if choices.compare_to_spectral
+    @time_imports using SHTnsSpheres: SHTnsSphere
 
     # set some flags to zero to compute only certain terms of du/dt
     CFHydrostatics.debug_flags() = (ke=0, Phi=1, gradB=1, CgradExner=0, qU=0)
