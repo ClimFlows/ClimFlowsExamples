@@ -12,7 +12,7 @@ include("preamble.jl")
         analysis_vector!, synthesis_vector!,
         divergence!, curl!, sample_vector!, sample_scalar!
 
-    using ClimFlowsTestCases: Williamson91, testcase, describe, initial_flow
+    using ClimFlowsTestCases: Williamson91, describe, initial
 
     using CFTimeSchemes: CFTimeSchemes, advance!
 
@@ -140,7 +140,7 @@ function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
     hd = HyperDiffusion(hd_n, hd_nu)
     model = RSW(sph, case.params.Omega, radius, hd)
 
-    f(n) = map((lon, lat) -> initial_flow(lon, lat, case)[n], sph.lon, sph.lat)
+    f(n) = map((lon, lat) -> case(lon, lat)[n], sph.lon, sph.lat)
     gh, ulon, ulat = f(1), f(2), f(3)
     state0 = initial_state(model, gh, ulon, ulat)
 
@@ -165,7 +165,7 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 sph = SHTnsSpheres.SHTnsSphere(128)
 
 @info toc("Setting up...")
-case = testcase(Williamson91{6}, Float64)
+case = Williamson91{6}()
 interval = 3600.0
 model, scheme, solver, state0 = setup(case, sph ; interval)
 book = diagnostics()
