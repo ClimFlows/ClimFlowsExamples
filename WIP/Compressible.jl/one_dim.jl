@@ -4,15 +4,14 @@ using Pkg; Pkg.activate(@__DIR__);
 push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 using Revise
 
-using CFCompressible
-using CFCompressible: VerticalDynamics as Dyn
-using CFCompressible.VerticalDynamics: VerticalEnergy, grad, total_energy, residual, tridiag_problem
-using BatchSolvers: SingleSolvers as Solvers
+using CFCompressible: CFCompressible, NewtonSolve, VerticalDynamics as Dyn
+using CFCompressible.VerticalDynamics: VerticalEnergy, grad, total_energy, residual, tridiag_problem, bwd_Euler
+using CFBatchSolvers: SingleSolvers as Solvers
 
 includet("setup.jl");
 include("config.jl");
 includet("run.jl");
-includet("backward_Euler.jl")
+# includet("backward_Euler.jl")
 
 #============================  1D model =========================#
 
@@ -23,7 +22,7 @@ struct OneDimModel{Gas, F}
     S::Vector{F}
 end
 
-function CFTimeSchemes.tendencies!(::Void, scr::Void, model::OneDimModel, state, t, tau)
+function CFTimeSchemes.tendencies!(::Void, scr::Void, model::OneDimModel, state::Tuple{A,A}, t, tau) where A<:Vector
     (; H, newton, m, S) = model
     Phi, W = state
     if tau>0
@@ -69,7 +68,7 @@ for k=1:10
 end
 @info Phis
 
-@time CFCompressible.Tests.test(H, (Phi, W, m, S))
+# @time CFCompressible.Tests.test(H, (Phi, W, m, S))
 
 if solver.scheme isa Midpoint
     Phi_end = copy(Phi)

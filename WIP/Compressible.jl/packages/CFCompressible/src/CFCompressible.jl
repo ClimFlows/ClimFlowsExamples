@@ -3,7 +3,15 @@ module CFCompressible
 using CFHydrostatics: HPE
 using CFPlanets: ShallowTradPlanet
 
-struct SoftSurface{T, A<:AbstractMatrix{T}} 
+struct NewtonSolve
+    niter::Int # number of Newton-Raphson iterations
+    flip_solve::Bool # direction of LU solver passes: false => bottom-up then top-down ; true => top-down then bottom-up
+    update_W::Bool # update W during Newton iteration (true), or only at the end (false)
+    verbose::Bool
+end
+
+function NewtonSolve(; niter=5, flip_solve=false, update_W=false, verbose=false, other...)
+    return NewtonSolve(niter, flip_solve, update_W, verbose)
 end
 
 struct FCE{F, Manager, Coord, Domain, Fluid, TwoDimScalar<:AbstractMatrix{F}}
@@ -15,15 +23,16 @@ struct FCE{F, Manager, Coord, Domain, Fluid, TwoDimScalar<:AbstractMatrix{F}}
     fcov::TwoDimScalar # covariant Coriolis factor = f(lat)*radius^2
     # bottom boundary condition: p = pb - rhob*(Phi-Phis)
     Phis::TwoDimScalar # target surface geopotential
-    pb::TwoDimScalar # surface pressure when Phi == Phis
     rhob::F # larger rhob makes smaller Phi-Phis but stiffer system
+    # options for Newton iteration used to solve HEVI problem
+    newton::NewtonSolve
 end
 
-function FCE(model::HPE{F}, gravity::F, pb, rhob) where F
+function FCE(model::HPE{F}, gravity::F, rhob, newton) where F
     (; mgr, vcoord, planet, domain, gas, fcov, Phis) = model
     (; radius, Omega) = planet
     planet = ShallowTradPlanet(radius, Omega, gravity)
-    return FCE(mgr, vcoord, planet, domain, gas, fcov, Phis, pb, rhob)
+    return FCE(mgr, vcoord, planet, domain, gas, fcov, Phis, rhob, newton)
 end
 
 # implemented in Dynamics

@@ -57,8 +57,8 @@ loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 state_HPE =  CFHydrostatics.initial_HPE(case, model)
 @profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
 
-ps = open(diags; model, state=state_HPE).surface_pressure
-model_FCE = CFCompressible.FCE(model, params.gravity, ps, params.rhob)
+newton = CFCompressible.NewtonSolve(choices.newton...)
+model_FCE = CFCompressible.FCE(model, params.gravity, params.rhob, newton)
 state_FCE = CFCompressible.NH_state.diagnose(model_FCE, diags, state_HPE)
 scheme_FCE = choices.TimeScheme(model_FCE)
 
@@ -70,6 +70,16 @@ let session = open(diags_FCE ; model=model_FCE, state=state_FCE)
 end
 
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
+
+let 
+    slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.)    
+    slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
+    @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
+    @profview for _ in 1:100
+        slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
+    end
+end;
+
 @time tape = simulation(merge(choices, params), loop_FCE, state_FCE);
 
 #=
