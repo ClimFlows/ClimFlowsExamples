@@ -214,7 +214,7 @@ const energies = (boundary_energy, internal_energy, potential_energy, kinetic_en
 
 function residual(H, tau, state, Phi_star, W_star)
     (Phi, W, m, S) = state
-    (dHdPhi, dHdW, _, _) = grad(total_energy, H, state...)
+    (dHdPhi, dHdW, _, _) = grad(total_energy, H, Phi, W, m, S)
     rPhi = @. (Phi_star - Phi) + tau * dHdW
     rW = @. (W_star - W) - tau * dHdPhi
     return rPhi, rW
@@ -272,7 +272,7 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
         @. DPhi += dPhi
         @. Phi = Phi_star + DPhi
 
-        (iter==1 && verbose ) && @info "Initial residuals" L2(rPhi) L2(rW)
+        (iter==1 && verbose ) && @info "Initial residuals" L2(rPhi) L2(rW)/L2(m)
 
         if update_W || iter==niter
             # although the reduced residual does not depend on W analytically,
@@ -294,7 +294,7 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
 
     if verbose
         rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        @info "Final residuals" L2(rPhi) L2(rW)
+        @info "Final residuals" L2(rPhi) L2(rW)/L2(m)
     end
 
     return Phi, W, m, S

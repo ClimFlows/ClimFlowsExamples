@@ -10,7 +10,7 @@ using SHTnsSpheres: SHTnsSpheres, SHTnsSphere,
 using ..CFCompressible: FCE
 import ..CFCompressible: FCE_tendencies!
 
-using ..CFCompressible.VerticalDynamics: VerticalEnergy, total_energy, grad
+using ..CFCompressible.VerticalDynamics: VerticalEnergy, bwd_Euler
 
 #= Units
 [m] = kg
@@ -36,26 +36,37 @@ Each step has its own additional scratch space for intermediate fields.
 In addition, there is shared scratch space for (Phiₗ, Wₗ, mₖ, Sₖ, mₗ, sₖ)
 =#
 
-# erase(x) = x # use SHTnsSpheres.erase when everything works
-erase(x) = SHTnsSpheres.erase(x)
+erase(x) = x # use SHTnsSpheres.erase when everything works
+# erase(x) = SHTnsSpheres.erase(x)
 
-model_state(mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec) = 
+model_state(mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec) =
     (; mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec)
+
+dk(Phi)=Phi[:,:,2:end]-Phi[:,:,1:end-1] # debug
 
 function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state, tau)
     # step 1
     common = spatial_fields!(scratch.common, model, sph, state)
+    let # debug
+        @info "state" tau extrema(dk(common.Phil))
+    end
     # step 2 : for the moment assume tau==0 and skip HEVI solver
+    Phil_new, Wl_new = bwd_Euler!(model, common.ps, (common.Phil, common.Wl, common.mk, common.Sk), tau)
     @assert tau==0
-    bwd_Euler!(model, common.W, common.Phi, tau)
     # step 3
     fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common)
+    
+    let # debug
+        w = common.Wl./common.ml
+        @info "fast" extrema(w).*model.planet.gravity^2 extrema(fast_spat.dPhil)
+    end
+
     dW_spec = analysis_scalar!(fast.W_spec, erase(fast_spat.dWl), sph)
     dPhi_spec = analysis_scalar!(fast.Phi_spec, erase(fast_spat.dPhil), sph)
     # step 4
     duv_spec, fast_uv = fast_tendencies_uv!(fast.uv_spec, scratch.fast_uv, model, sph, common.sk, fast_spat.dHdm, fast_spat.dHdS)
     zero_mass = ZeroArray(state.mass_air_spec)
-    fast = model_state(zero_mass, zero_mass, duv_spec, dPhi_spec, dW_spec)
+    fast = model_state(zero_mass, zero_mass, duv_spec, dPhi_spec, dW_spec) # air, consvar, uv, Phi, W
 
     # step 5: for the moment assume tau==0 and skip
     @assert tau==0
@@ -64,8 +75,14 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state, ta
     (dmass_air_spec, dmass_consvar_spec, dW_spec, dPhi_spec), slow_mass = mass_budgets!(slow, scratch.slow_mass, model, sph, new_state, common)
     # step 7
     duv_spec, slow_curl_form = curl_form!(slow.uv_spec, scratch.slow_curl_form, model.fcov, sph, new_state, slow_mass.fluxes, common.mk)
+
+    let # debug
+        fluxes = slow_mass.fluxes
+        @info "slow" extrema(fluxes.dPhi)
+    end
+
     # Done
-    slow = model_state(dmass_air_spec, dmass_consvar_spec, duv_spec, dW_spec, dPhi_spec)
+    slow = model_state(dmass_air_spec, dmass_consvar_spec, duv_spec, dPhi_spec, dW_spec) # air, consvar, uv, Phi, W
     scratch = (; common, fast_spat, fast_uv, slow_mass, slow_curl_form)
     return slow, fast, scratch
 end
@@ -292,96 +309,22 @@ end
 
 #================== backward Euler step ================#
 
-function bwd_Euler!(model, (Phi_star, W_star, m, S), tau)
-    (; gravity) = model.planet
-    (; niter, flip_solve, update_W, verbose) = model.newton
+function bwd_Euler!(model, ps, (Phil, Wl, mk, Sk), tau)
+    (; newton, vcoord, planet, gas, Phis, rhob) = model
+    ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
 
-    inv_tau_g2 = inv(tau * gravity^2)
-    DPhi, Phi, W = zero(Phi_star), copy(Phi_star), copy(W_star)
-    for iter in 1:niter
-        rPhi, rW = residual(model, tau, (Phi, W, m, S), Phi_star, W_star)
-        A, B, R = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
-        dPhi = Solvers.Thomas(A, B, R, flip_solve)
-        @. DPhi += dPhi
-        @. Phi = Phi_star + DPhi
-
-        (iter==1 && verbose ) && @info "Initial residuals" L2(rPhi) L2(rW)
-
-        if update_W || iter==niter
-            # although the reduced residual does not depend on W analytically,
-            # updating W during the iteration improves the final residual and is cheap
-            # W = ml * (Phi-Phi_star) / (tau*g^2)
-            Nz = length(m)
-            let l = 1, ml = m[l] / 2
-                W[l] = inv_tau_g2 * (ml * DPhi[l])
-            end
-            for l in 2:Nz
-                ml = (m[l - 1] + m[l]) / 2
-                W[l] = inv_tau_g2 * (ml * DPhi[l])
-            end
-            let l = Nz + 1, ml = m[l - 1] / 2
-                W[l] = inv_tau_g2 * (ml * DPhi[l])
-            end
+    Phil_new, Wl_new = similar(Phil), similar(Wl)
+    if tau>0
+        for i in axes(mk,1), j in axes(mk,2)
+            H = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
+            Phil_new[i,j,:], Wl_new[i,j,:] = bwd_Euler(H, newton, tau, (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])) 
+            newton = (typeof(newton))(newton.niter, newton.flip_solve, newton.update_W, false) # switch off verbosity
         end
+    else
+        @. Phil_new = Phil
+        @. Wl_new = Wl
     end
-
-    if verbose
-        rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        @info "Final residuals" L2(rPhi) L2(rW)
-    end
-
-    return Phi, W, m, S
-end
-
-function residual(model, tau, state, Phi_star, W_star)
-    (Phi, W, m, S) = state
-    (dHdPhi, dHdW, _, _) = grad_total_energy(model, state)
-    rPhi = @. (Phi_star - Phi) + tau * dHdW
-    rW = @. (W_star - W) - tau * dHdPhi
-    return rPhi, rW
-end
-
-function grad_total_energy(H, (Phi, W, m, S))
-    (; Phis, pb, rhob, J, ptop, gravity, gas) = H
-    dHdPhi, dHdW, dHdm, dHdS = map(zero, (Phi, W, m, S))
-    Nz = length(m)
-    (; gravity) = H
-    for l in 1:(Nz + 1)
-        # kinetic
-        if l == 1
-            mm = m[1] / 2
-        elseif l == Nz + 1
-            mm = m[Nz] / 2
-        else
-            mm = (m[l - 1] + m[l]) / 2
-        end
-        gw = gravity^2 * W[l] / mm
-        dHdW[l] += gw
-        gw2 = gravity^2 * (W[l] / mm)^2
-        l > 1 && (dHdm[l - 1] -= gw2/4)
-        l <= Nz && (dHdm[l] -= gw2/4)
-    end
-    for k in 1:Nz
-        # potential
-        dHdm[k] += (Phi[k + 1] + Phi[k]) / 2
-        dHdPhi[k] += m[k] / 2
-        dHdPhi[k + 1] += m[k] / 2
-        # internal
-        s = S[k] / m[k]
-        vol = J * (Phi[k + 1] - Phi[k]) / m[k]
-        p = gas(:v, :consvar).pressure(vol, s)
-        Jp = J * p
-        dHdPhi[k] += Jp
-        dHdPhi[k + 1] -= Jp
-        h, _, exner = gas(:p, :consvar).exner_functions(p, s)
-        dHdm[k] += h - s * exner
-        dHdS[k] += exner
-    end
-    # boundary
-    dHdPhi[end] += J * ptop
-    dHdPhi[1] += J * (rhob * (Phi[1] - Phis) - pb)
-
-    return dHdPhi, dHdW, dHdm, dHdS
+    return Phil_new, Wl_new
 end
 
 #======================== utilities ====================#

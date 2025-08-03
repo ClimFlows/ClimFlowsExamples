@@ -49,13 +49,13 @@ let choices = merge(choices, (TimeScheme=CFTimeSchemes.KinnmarkGray{2,5}, ndays=
     (; diags, model) = loop_HPE
     state_HPE =  CFHydrostatics.initial_HPE(case, model)
     state0 = deepcopy(state_HPE)
-    @time tape = simulation(merge(choices, params), loop_HPE, state0);
+#    @time tape = simulation(merge(choices, params), loop_HPE, state0);
 end;
 
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
 (; diags, model) = loop_HPE
 state_HPE =  CFHydrostatics.initial_HPE(case, model)
-@profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
+# @profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
 
 newton = CFCompressible.NewtonSolve(choices.newton...)
 model_FCE = CFCompressible.FCE(model, params.gravity, params.rhob, newton)
@@ -72,10 +72,10 @@ end
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
 let 
-    slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.)    
-    slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
-    @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
-    @profview for _ in 1:100
+    slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.);
+    slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
+    @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
+    @profview for _ in 1:1
         slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
     end
 end;
