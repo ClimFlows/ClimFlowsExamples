@@ -19,8 +19,9 @@ function diagnose(model::FCE, diags, state)
     (; radius, gravity) = planet
     rad2, invrad, gm2 = radius^2, inv(radius), gravity^-2
 
+    # NB : in HPE, `masses` are multiplied by gravity but not in HPE => divide by gravity
     session = open(diags; model, state)
-    mass = (radius^2) * session.masses.air # 0-form => 2-form
+    mass = (radius^2/gravity) * session.masses.air # 0-form => 2-form ; 
     ux, uy = (invrad * u for u in session.uv) # physical => contravariant
     Phi_x, Phi_y = session.gradPhi_cov
     dPhi = session.dgeopotential
@@ -80,8 +81,9 @@ function diagnose(model::FCE, diags, state)
     (; mass_air_spec, mass_consvar_spec) = state
     uv_spec = analysis_vector!(void, erase((ucolat=ux, ulon=uy)), sph)
     W_spec = analysis_scalar!(void, erase(W), sph)
+    W_spec = zero(W_spec) # FIXME
     Phi_spec = analysis_scalar!(void, erase(session.geopotential), sph)
-    return (; mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec)
+    return (; mass_air_spec=mass_air_spec/gravity, mass_consvar_spec=mass_consvar_spec/gravity, uv_spec, Phi_spec, W_spec)
 end
 
 end # module
