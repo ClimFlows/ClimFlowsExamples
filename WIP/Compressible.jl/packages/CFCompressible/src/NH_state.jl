@@ -81,7 +81,6 @@ function diagnose(model::FCE, diags, state)
     (; mass_air_spec, mass_consvar_spec) = state
     uv_spec = analysis_vector!(void, erase((ucolat=ux, ulon=uy)), sph)
     W_spec = analysis_scalar!(void, erase(W), sph)
-    W_spec = zero(W_spec) # FIXME
     Phi_spec = analysis_scalar!(void, erase(session.geopotential), sph)
     return (; mass_air_spec=mass_air_spec/gravity, mass_consvar_spec=mass_consvar_spec/gravity, uv_spec, Phi_spec, W_spec)
 end
