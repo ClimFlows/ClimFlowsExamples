@@ -53,19 +53,20 @@ state_HPE =  CFHydrostatics.initial_HPE(case, model_HPE)
 
 newton = CFCompressible.NewtonSolve(choices.newton...)
 model_FCE = CFCompressible.FCE(model_HPE, params.gravity, params.rhob, newton)
-diags_FCE = CFCompressible.diagnostics(model_FCE)
 state_FCE = CFCompressible.NH_state.diagnose(model_FCE, diags_HPE, state_HPE)
+diags_FCE = CFCompressible.diagnostics(model_FCE)
 
 diags_HPE.specific_volume = (model, pressure, temperature) -> model.gas(:p, :T).specific_volume.(pressure, temperature)
 diags_HPE.ulat = uv -> -uv.ucolat
 diags_HPE.ulon = uv -> uv.ulon
+diags_HPE.slow_fast = (model, state) -> CFTimeSchemes.tendencies!(void, void, void, model, state, 0.0, 0.0)
+diags_HPE.slow = slow_fast -> slow_fast[1]
+diags_HPE.fast = slow_fast -> slow_fast[2]
+diags_HPE.slow_mass_air = (model, slow) -> synthesis_scalar!(void, slow.mass_air_spec, model.domain.layer)
 
 let 
     session_HPE = open(diags_HPE ; model=model_HPE, state=state_HPE)
     session_FCE = open(diags_FCE ; model=model_FCE, state=state_FCE)
-
-    @info "check" session_HPE.conservative_variable ≈ session_FCE.conservative_variable
-    @info "check" session_HPE.temperature ≈ session_FCE.temperature
 
     diff(tag) = getproperty(session_HPE, tag)-getproperty(session_FCE, tag)
 
@@ -78,19 +79,24 @@ let
         show(scatterplot(var_FCE[:], var_HPE[:]))
     end
 
-    showdiff(:conservative_variable)
-    showdiff(:ulon)
-    showdiff(:specific_volume)
-    showdiff(:temperature)
-    showdiff(:Phi_dot)
+#    @info "check" session_HPE.conservative_variable ≈ session_FCE.conservative_variable
+#    @info "check" session_HPE.temperature ≈ session_FCE.temperature
+#    showdiff(:conservative_variable)
+#    showdiff(:ulon)
+#    showdiff(:specific_volume)
+#    showdiff(:temperature)
+#    showdiff(:Phi_dot)
+
+    showdiff(:slow_mass_air)
 end
+
+#======================================================================#
 
 scheme_FCE = choices.TimeScheme(model_FCE)
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
-#======================================================================#
-
 #=
+
 let 
     slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.);
     slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);

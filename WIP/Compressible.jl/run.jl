@@ -29,11 +29,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
     for iter = 1:N*nstep
         state::State
         advance!(state, solver, state, t, 1)
-
         session = open(diags ; model, state)
-        @info "run_loop" extrema(session.surface_pressure)
+        @info "run_loop iter = $iter / $(N*nstep)" extrema(session.surface_pressure)
 #        show(heatmap(session.surface_pressure))
-        show(heatmap(session.Phi_dot[:,:,10]))
+#        show(heatmap(session.Phi_dot[:,:,10]))
 
 #        if remap_period>0 && mod(iter, remap_period)==0
 #            state = vertical_remap(model, state, scratch)
@@ -43,6 +42,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 #        uv_spec = dissipation.zeta(uv_spec, uv_spec)
 #        state = (; state..., mass_consvar_spec, uv_spec)
     end
+
+    session = open(diags ; model, state)
+    show(heatmap(session.surface_pressure))
+
 end
 
 function vertical_remap(model, state, scratch = void)

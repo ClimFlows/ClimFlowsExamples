@@ -28,37 +28,17 @@ function diagnostics()
                     # depend on vertical coordinate
                     masses,
                     conservative_variable,
-                    fast_slow_scratch,
-                    scratch,
                     Phi_dot,
-    #=
-                    surface_pressure,
-                    geopotential,
-                    Omega,
-                    Phi_dot,
-                    # dX is the local time derivative of X, assuming a Lagrangian vertical coordinate
-                    dmasses,
-                    duv,
-                    dulon,
-                    dulat,
-                    dpressure,
-                    dgeopotential,
-                    # intermediate computations
-                    dstate,
-                    ps_spec,
-                    gradPhi_cov,
-                    # mostly for debugging
-                    dstate_all,
-                    gradmass,
-                    ugradps,
-                    gradPhi,
-    =#
+                    slow_fast_scratch, slow, fast, scratch,
+                    slow_mass_air,
                     )
 end
 
 #=================== independent from vertical coordinate ==============#
 
 # same as HPE
+
+slow_mass_air(model, slow) = synthesis_scalar!(void, slow.mass_air_spec, model.domain.layer)
 
 function sound_speed(model, pressure, temperature)
     return model.gas(:p, :T).sound_speed.(pressure, temperature)
@@ -124,10 +104,10 @@ end
 
 NH_pressure(pressure, hydrostatic_pressure) = pressure - hydrostatic_pressure
 
-fast_slow_scratch(model, state) = FCE_tendencies!(void, void, void, model, model.domain.layer, state, 0.0)
-fast(fast_slow_scratch) = fast_slow_scratch[1]
-slow(fast_slow_scratch) = fast_slow_scratch[2]
-scratch(fast_slow_scratch) = fast_slow_scratch[3]
+slow_fast_scratch(model, state) = FCE_tendencies!(void, void, void, model, model.domain.layer, state, 0.0)
+slow(slow_fast_scratch) = slow_fast_scratch[1]
+fast(slow_fast_scratch) = slow_fast_scratch[2]
+scratch(slow_fast_scratch) = slow_fast_scratch[3]
 
 Phi_dot(scratch) = scratch.fast_spat.dPhil
 

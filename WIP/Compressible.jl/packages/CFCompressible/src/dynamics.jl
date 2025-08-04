@@ -49,13 +49,13 @@ const State = NamedTuple{(:mass_air_spec, :mass_consvar_spec, :uv_spec, :Phi_spe
 function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::State, tau)
     # steps 1-3
     common = spatial_fields!(scratch.common, model, sph, state)
-    @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
+    # @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
     Phil_new, Wl_new = bwd_Euler!(model, common.ps, (common.Phil, common.Wl, common.mk, common.Sk), tau)
     fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common, Phil_new, Wl_new)
-    
+
     let # debug
         dw = fast_spat.dWl./common.ml
-        @info "fast" extrema(fast_spat.dPhil) extrema(dw).*model.planet.gravity^2 
+        # @info "fast" extrema(fast_spat.dPhil) extrema(dw).*model.planet.gravity^2 
     end
 
     dW_spec = analysis_scalar!(fast.W_spec, erase(fast_spat.dWl), sph)
@@ -78,7 +78,7 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::St
 
     let # debug
         fluxes = slow_mass.fluxes
-        @info "slow" extrema(fluxes.dPhi)
+        # @info "slow" extrema(fluxes.dPhi)
     end
 
     # Done
@@ -220,13 +220,13 @@ function mass_budgets!(dstate, scratch, model, sph, new_state, common)
 
     # air mass budget FIXME: we cannot erase U,V, they will be used for the curl form
     flux_spec = analysis_vector!(scratch.flux_spec, vector_spat(fluxes.U, fluxes.V), sph)
-    dmass_air_spec = @. dstate.mass_air_spec = flux_spec.spheroidal * laplace
+    dmass_air_spec = @. dstate.mass_air_spec = -flux_spec.spheroidal * laplace
     # consvar mass budget
     flux_spec = analysis_vector!(scratch.flux_spec, erase(vector_spat(fluxes.sU, fluxes.sV)), sph)
-    dmass_consvar_spec = @. dstate.mass_consvar_spec = flux_spec.spheroidal * laplace
+    dmass_consvar_spec = @. dstate.mass_consvar_spec = -flux_spec.spheroidal * laplace
     # W budget
     Wflux_spec = analysis_vector!(scratch.Wflux_spec, erase(vector_spat(fluxes.wU, fluxes.wV)), sph)
-    dW_spec = @. dstate.W_spec = Wflux_spec.spheroidal * laplace
+    dW_spec = @. dstate.W_spec = -Wflux_spec.spheroidal * laplace
     # Phi tendency
     dPhi_spec = analysis_scalar!(dstate.Phi_spec, erase(fluxes.dPhi), sph)
 

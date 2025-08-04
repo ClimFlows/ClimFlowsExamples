@@ -12,11 +12,11 @@ choices = (Fluid=IdealPerfectGas,
                    update_W=true,   # update W during Newton iterations
                    verbose=false))
 params = (
-          testcase = (; u0=0., lonc=pi, latc=0), # override test case defaults
+          testcase = (; lonc=pi), # override test case defaults
           ptop = 225.52395239472398,
           pb=1e5,
           rhob=1e5, # 100.0,
-          gravity=9.81,
+          gravity= 9.81,
           Phis=0,
           Cp=1000,
           kappa=2 / 7,
