@@ -38,51 +38,65 @@ params = map(Float64, params)
 params = (Uplanet = params.radius * params.Omega, params...)
 
 # initial condition
+
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
-(; diags, model) = loop_HPE
+diags_HPE, model_HPE = loop_HPE.diags, loop_HPE.model
+state_HPE =  CFHydrostatics.initial_HPE(case, model_HPE)
+
+# run_Kinnmark_Gray(params, choices, sph, mgr)
+# @profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
 
 #======================================================================#
 
-let choices = merge(choices, (TimeScheme=CFTimeSchemes.KinnmarkGray{2,5}, ndays=1)),
-    params = merge(params, (; courant=4.0))
-    loop_HPE, case = setup(choices, params, sph, mgr, HPE)
-    (; diags, model) = loop_HPE
-    state_HPE =  CFHydrostatics.initial_HPE(case, model)
-    state0 = deepcopy(state_HPE)
-#    @time tape = simulation(merge(choices, params), loop_HPE, state0);
-end;
-
-loop_HPE, case = setup(choices, params, sph, mgr, HPE)
-(; diags, model) = loop_HPE
-state_HPE =  CFHydrostatics.initial_HPE(case, model)
-# @profview tape = simulation(merge(choices, params), loop_HPE, deepcopy(state_HPE));
-
 newton = CFCompressible.NewtonSolve(choices.newton...)
-model_FCE = CFCompressible.FCE(model, params.gravity, params.rhob, newton)
-state_FCE = CFCompressible.NH_state.diagnose(model_FCE, diags, state_HPE)
-scheme_FCE = choices.TimeScheme(model_FCE)
-
+model_FCE = CFCompressible.FCE(model_HPE, params.gravity, params.rhob, newton)
 diags_FCE = CFCompressible.diagnostics(model_FCE)
-let session = open(diags_FCE ; model=model_FCE, state=state_FCE)
-    @info "check" extrema(session.temperature)
-    @info "check" extrema(session.conservative_variable)
-    @info "check" extrema(session.pressure)
+state_FCE = CFCompressible.NH_state.diagnose(model_FCE, diags_HPE, state_HPE)
+
+diags_HPE.specific_volume = (model, pressure, temperature) -> model.gas(:p, :T).specific_volume.(pressure, temperature)
+diags_HPE.ulat = uv -> -uv.ucolat
+diags_HPE.ulon = uv -> uv.ulon
+
+let 
+    session_HPE = open(diags_HPE ; model=model_HPE, state=state_HPE)
+    session_FCE = open(diags_FCE ; model=model_FCE, state=state_FCE)
+
+    @info "check" session_HPE.conservative_variable ≈ session_FCE.conservative_variable
+    @info "check" session_HPE.temperature ≈ session_FCE.temperature
+
+    diff(tag) = getproperty(session_HPE, tag)-getproperty(session_FCE, tag)
+
+    function showdiff(tag) 
+        var_HPE = getproperty(session_HPE, tag)[:,:,10]
+        var_FCE = getproperty(session_FCE, tag)[:,:,10]
+        @info "showing $tag" extrema(var_HPE) extrema(var_FCE) var_HPE ≈ var_FCE
+        show(heatmap(var_FCE - var_HPE))
+        show(scatterplot(var_FCE[:], var_HPE[:]))
+    end
+
+    showdiff(:conservative_variable)
+    showdiff(:ulon)
+    showdiff(:specific_volume)
+    showdiff(:temperature)
+    showdiff(:Phi_dot)
 end
 
+scheme_FCE = choices.TimeScheme(model_FCE)
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
+#=
 let 
     slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.);
     slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
     @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
     @profview for _ in 1:1
-        slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.)    
+        slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.0)
     end
 end;
+=#
 
 @time tape = simulation(merge(choices, params), loop_FCE, state_FCE);
 
-#=
 include("movie.jl")
 
 @info diags

@@ -122,3 +122,14 @@ function simulation(params, info, state0; ndays=params.ndays)
         end
     return tape
 end
+
+function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
+    params = merge(params, (; courant=4.0)),
+    choices = merge(choices, (; ndays, TimeScheme=CFTimeSchemes.KinnmarkGray{2,5}))
+    loop, case = setup(choices, params, sph, mgr, HPE)
+    (; diags, model) = loop
+    state =  CFHydrostatics.initial_HPE(case, model)
+    state0 = deepcopy(state)
+    @time tape = simulation(merge(choices, params), loop_HPE, state0);
+end;
+

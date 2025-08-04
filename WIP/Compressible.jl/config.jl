@@ -8,14 +8,14 @@ choices = (Fluid=IdealPerfectGas,
            remap_period=0,
            nlat=64,
            ndays=3, # 6,
-           newton=(niter=10,         # number of iterations
+           newton=(niter=3,         # number of Newton iterations
                    flip_solve=true, # direction of tridiagonal solver passes  
                    update_W=true,   # update W during Newton iterations
-                   verbose=true))
+                   verbose=false))
 params = (
           ptop = 225.52395239472398,
           pb=1e5,
-          rhob=1e6,
+          rhob=1e5, # 100.0,
           gravity=9.81,
           Phis=0,
           Cp=1000,
@@ -25,6 +25,6 @@ params = (
           radius=6.4e6,
           Omega=7.272e-5,
           hyperdiff_nu=0, # 0.002,
-          courant=1.0, # 3.0,
+          courant=1.5,
           dt=1000,
           interval=6 * 3600)

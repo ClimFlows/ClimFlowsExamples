@@ -47,6 +47,7 @@ dk(Phi)=Phi[:,:,2:end]-Phi[:,:,1:end-1] # debug
 function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state, tau)
     # step 1
     common = spatial_fields!(scratch.common, model, sph, state)
+    @info "tendencies!" extrema(common.Phil)
     let # debug
         @info "state" tau extrema(dk(common.Phil))
     end
@@ -198,7 +199,7 @@ function fast_tendencies_uv!(duv_spec, scratch, model, sph, sk, dHdm, dHdS)
     fy = @. fy = sk * uy
     s_gradT_spec = analysis_vector!(s_gradT_spec, erase(vector_spat(fx,fy)), sph)
 
-    dHdm_spec = analysis_scalar!(dHdm_spec, erase(dHdm), sph) # FIXME: avoid allocation
+    dHdm_spec = analysis_scalar!(dHdm_spec, erase(dHdm), sph)
     duv_spec = vector_spec(
         (@. duv_spec.spheroidal = -dHdm_spec-s_gradT_spec.spheroidal),
         (@. duv_spec.toroidal = -s_gradT_spec.spheroidal),
@@ -312,6 +313,8 @@ end
 function bwd_Euler!(model, ps, (Phil, Wl, mk, Sk), tau)
     (; newton, vcoord, planet, gas, Phis, rhob) = model
     ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
+    
+    @info "bwd_Euler" extrema(ps)
 
     Phil_new, Wl_new = similar(Phil), similar(Wl)
     if tau>0
