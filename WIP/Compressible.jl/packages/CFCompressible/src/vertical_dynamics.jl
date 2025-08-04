@@ -217,7 +217,23 @@ function residual(H, tau, state, Phi_star, W_star)
     (dHdPhi, dHdW, _, _) = grad(total_energy, H, Phi, W, m, S)
     rPhi = @. (Phi_star - Phi) + tau * dHdW
     rW = @. (W_star - W) - tau * dHdPhi
+#    rPhi = @. 0 * dHdW
+#    rW = @. - tau * dHdPhi
     return rPhi, rW
+end
+
+function hydrostatic_geopotential!(H, m, S, Phi)
+    (; gas, Phis, ptop, J) = H
+    pl, Phil = ptop + sum(m)/J, Phis # surface pressure & geopotential
+    for k in eachindex(m)
+        Phi[k] = Phil
+        dp = m[k]/J
+        vol = gas(:p, :consvar).specific_volume(pl - dp/2, S[k]/m[k])
+        Phil += vol*m[k]/J
+        pl -= dp
+    end
+    Phi[end] = Phil
+    return Phi
 end
 
 function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
@@ -255,7 +271,7 @@ function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
         B[Nz + 1] = A[Nz] + ml_g2
         R[Nz + 1] = ml_g2 * rPhi[Nz + 1] + tau * rW[Nz + 1]
     end
-    return A, B, R
+    return A, B, R, ml
 end
 
 function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
@@ -264,18 +280,27 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
 
     inv_tau_g2 = inv(tau * gravity^2)
     (Phi_star, W_star, m, S) = state
-    DPhi, Phi, W = zero(Phi_star), copy(Phi_star), copy(W_star)
+#    Phi = hydrostatic_geopotential!(H, m, S, copy(Phi_star))
+    Phi = copy(Phi_star)
+    DPhi = Phi-Phi_star
+    W = copy(W_star)
+
+    verbose && @info "========= Start Newton iteration =======#" extrema(Phi_star) extrema(Phi) extrema(DPhi)
+
     for iter in 1:niter
+        @. Phi = Phi_star + DPhi
         rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        A, B, R = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
+        A, B, R, ml = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
+
+        verbose && @info "Residuals at iter=$iter" L2(R./ml) L2(rW./ml)
+
         dPhi = Solvers.Thomas(A, B, R, flip_solve)
         @. DPhi += dPhi
-        @. Phi = Phi_star + DPhi
 
-        (iter==1 && verbose ) && @info "Initial residuals" L2(rPhi) L2(rW)/L2(m)
+        verbose && @info "Update at iter=$iter" extrema(dPhi) extrema(DPhi) dPhi[1] DPhi[1]
 
         if update_W || iter==niter
-            # although the reduced residual does not depend on W analytically,
+            # although the reduced residual R does not depend on W analytically,
             # updating W during the iteration improves the final residual and is cheap
             # W = ml * (Phi-Phi_star) / (tau*g^2)
             Nz = length(m)
@@ -290,11 +315,6 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
                 W[l] = inv_tau_g2 * (ml * DPhi[l])
             end
         end
-    end
-
-    if verbose
-        rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        @info "Final residuals" L2(rPhi) L2(rW)/L2(m)
     end
 
     return Phi, W, m, S
