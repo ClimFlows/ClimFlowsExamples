@@ -44,34 +44,33 @@ model_state(mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec) =
 
 dk(Phi)=Phi[:,:,2:end]-Phi[:,:,1:end-1] # debug
 
-function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state, tau)
-    # step 1
+const State = NamedTuple{(:mass_air_spec, :mass_consvar_spec, :uv_spec, :Phi_spec, :W_spec)}
+
+function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::State, tau)
+    # steps 1-3
     common = spatial_fields!(scratch.common, model, sph, state)
-    @info "tendencies!" extrema(common.Phil)
-    let # debug
-        @info "state" tau extrema(dk(common.Phil))
-    end
-    # step 2 : for the moment assume tau==0 and skip HEVI solver
+    @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
     Phil_new, Wl_new = bwd_Euler!(model, common.ps, (common.Phil, common.Wl, common.mk, common.Sk), tau)
-    @assert tau==0
-    # step 3
-    fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common)
+    fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common, Phil_new, Wl_new)
     
     let # debug
-        w = common.Wl./common.ml
-        @info "fast" extrema(w).*model.planet.gravity^2 extrema(fast_spat.dPhil)
+        dw = fast_spat.dWl./common.ml
+        @info "fast" extrema(fast_spat.dPhil) extrema(dw).*model.planet.gravity^2 
     end
 
     dW_spec = analysis_scalar!(fast.W_spec, erase(fast_spat.dWl), sph)
     dPhi_spec = analysis_scalar!(fast.Phi_spec, erase(fast_spat.dPhil), sph)
+
     # step 4
     duv_spec, fast_uv = fast_tendencies_uv!(fast.uv_spec, scratch.fast_uv, model, sph, common.sk, fast_spat.dHdm, fast_spat.dHdS)
     zero_mass = ZeroArray(state.mass_air_spec)
     fast = model_state(zero_mass, zero_mass, duv_spec, dPhi_spec, dW_spec) # air, consvar, uv, Phi, W
 
-    # step 5: for the moment assume tau==0 and skip
-    @assert tau==0
-    new_state = state
+    # step 5: update uv_spec ; keep Phil_new and Wl_new at grid points
+    spheroidal = (@. scratch.spheroidal = state.uv_spec.spheroidal + tau*duv_spec.spheroidal)
+    toroidal = (@. scratch.toroidal = state.uv_spec.toroidal + tau*duv_spec.toroidal)
+    new_state = (; uv_spec = (; spheroidal, toroidal), Phil=Phil_new, Wl=Wl_new) # masses are unchanged
+
     # step 6
     (dmass_air_spec, dmass_consvar_spec, dW_spec, dPhi_spec), slow_mass = mass_budgets!(slow, scratch.slow_mass, model, sph, new_state, common)
     # step 7
@@ -84,7 +83,7 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state, ta
 
     # Done
     slow = model_state(dmass_air_spec, dmass_consvar_spec, duv_spec, dPhi_spec, dW_spec) # air, consvar, uv, Phi, W
-    scratch = (; common, fast_spat, fast_uv, slow_mass, slow_curl_form)
+    scratch = (; common, fast_spat, fast_uv, slow_mass, slow_curl_form, Phil_new, Wl_new, spheroidal, toroidal)
     return slow, fast, scratch
 end
 
@@ -134,10 +133,10 @@ end
 
 zero!(x) = @. x=0
 
-function fast_tendencies_PhiW!(scratch, model, common)
+function fast_tendencies_PhiW!(scratch, model, common, Phil, Wl)
     (; Phis, rhob) = model # bottom boundary condition p = ps - rhob*(Phi-Phis)
     (; vcoord, planet, gas) = model
-    (; Phil, Wl, mk, sk, ml, ps) = common
+    (; mk, sk, ml, ps) = common
     
     dWl = similar!(scratch.dWl, Wl) # = -dHdPhi
     dPhil = similar!(scratch.dPhil, Phil) # =+dHdW
@@ -210,13 +209,13 @@ end
 
 #============= slow tendencies ================#
 
-function mass_budgets!(dstate, scratch, model, sph, state, common)
+function mass_budgets!(dstate, scratch, model, sph, new_state, common)
     (; mgr, planet), (; laplace) = model, sph      # parameters
-    (; mk, ml, sk), (; Phi_spec, uv_spec) = common, state   # inputs
+    (; mk, ml, sk), (; uv_spec, Phil, Wl) = common, new_state   # inputs
 
-    Wl = synthesis_scalar!(scratch.Wl, state.W_spec, sph)
-    (vx, vy) = uv = synthesis_vector!(scratch.uv, uv_spec, sph)
+    Phi_spec = analysis_scalar!(scratch.Phi_spec, Phil, sph)
     (gx, gy) = grad_Phi = synthesis_spheroidal!(scratch.grad_Phi, Phi_spec, sph)
+    (vx, vy) = uv = synthesis_vector!(scratch.uv, uv_spec, sph)
     fluxes = NH_fluxes!(scratch.fluxes, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
 
     # air mass budget FIXME: we cannot erase U,V, they will be used for the curl form
@@ -231,7 +230,7 @@ function mass_budgets!(dstate, scratch, model, sph, state, common)
     # Phi tendency
     dPhi_spec = analysis_scalar!(dstate.Phi_spec, erase(fluxes.dPhi), sph)
 
-    return (dmass_air_spec, dmass_consvar_spec, dW_spec, dPhi_spec), (; Wl, uv, grad_Phi, fluxes, flux_spec, Wflux_spec)
+    return (dmass_air_spec, dmass_consvar_spec, dW_spec, dPhi_spec), (; Wl, uv, grad_Phi, fluxes, flux_spec, Wflux_spec, Phi_spec)
 end
 
 function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
@@ -314,8 +313,6 @@ function bwd_Euler!(model, ps, (Phil, Wl, mk, Sk), tau)
     (; newton, vcoord, planet, gas, Phis, rhob) = model
     ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
     
-    @info "bwd_Euler" extrema(ps)
-
     Phil_new, Wl_new = similar(Phil), similar(Wl)
     if tau>0
         for i in axes(mk,1), j in axes(mk,2)

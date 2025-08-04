@@ -20,6 +20,7 @@ function diagnostics()
                     uv, ulon, ulat,
                     specific_volume,
                     pressure,
+                    surface_pressure,
                     hydrostatic_pressure,
                     NH_pressure,
                     temperature,
@@ -96,6 +97,8 @@ function specific_volume(model, scratch)
     dPhi = Phi[:,:,2:end]-Phi[:,:,1:end-1]
     return @. Jac*dPhi/m
 end
+
+surface_pressure(scratch) = scratch.common.ps
 
 function pressure(model, specific_volume, conservative_variable)
      return model.gas(:v, :consvar).pressure.(specific_volume, conservative_variable)

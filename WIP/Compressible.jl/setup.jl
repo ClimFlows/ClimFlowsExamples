@@ -44,7 +44,7 @@ end
 #============== model setup =============#
 
 function setup(choices, params, sph, mgr, Equation)
-    case = choices.TestCase(Float64)
+    case = choices.TestCase(Float64; params.testcase...)
     params = merge(choices, case.params, params)
     hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
     # stuff independent from initial condition

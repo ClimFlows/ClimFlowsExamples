@@ -21,20 +21,27 @@ function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
 end
 
 # the extra parameter `dt` is for benchmarking purposes only
-function run_loop(timeloop::TimeLoop, N, interval, state, scratch; dt = timeloop.solver.dt)
-    (; solver, model, dissipation, remap_period, mutating) = timeloop
+function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = timeloop.solver.dt) where State
+    (; diags, solver, model, dissipation, remap_period, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
     for iter = 1:N*nstep
+        state::State
         advance!(state, solver, state, t, 1)
-        if remap_period>0 && mod(iter, remap_period)==0
-            state = vertical_remap(model, state, scratch)
-        end
-        (; mass_air_spec, mass_consvar_spec, uv_spec) = state
-        mass_consvar_spec = dissipation.theta(mass_consvar_spec, mass_consvar_spec)
-        uv_spec = dissipation.zeta(uv_spec, uv_spec)
-        state = (; mass_air_spec, mass_consvar_spec, uv_spec)
+
+        session = open(diags ; model, state)
+        @info "run_loop" extrema(session.surface_pressure)
+#        show(heatmap(session.surface_pressure))
+        show(heatmap(session.Phi_dot[:,:,10]))
+
+#        if remap_period>0 && mod(iter, remap_period)==0
+#            state = vertical_remap(model, state, scratch)
+#        end
+#        (; mass_consvar_spec, uv_spec) = state
+#        mass_consvar_spec = dissipation.theta(mass_consvar_spec, mass_consvar_spec)
+#        uv_spec = dissipation.zeta(uv_spec, uv_spec)
+#        state = (; state..., mass_consvar_spec, uv_spec)
     end
 end
 
@@ -99,7 +106,7 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 
 function simulation(params, info, state0; ndays=params.ndays)
 #    diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
-    diag(state) = -reverse(open(diags; model, state).Phi_dot[:, :, 10]; dims=1)
+    diag(state) = reverse(open(diags; model, state).Phi_dot[:, :, 10]; dims=1)
 
     (; model, diags) = info
     @info "Starting simulation on $(model.mgr)."
@@ -124,7 +131,7 @@ function simulation(params, info, state0; ndays=params.ndays)
 end
 
 function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
-    params = merge(params, (; courant=4.0)),
+    params = merge(params, (; courant=4.0, ))
     choices = merge(choices, (; ndays, TimeScheme=CFTimeSchemes.KinnmarkGray{2,5}))
     loop, case = setup(choices, params, sph, mgr, HPE)
     (; diags, model) = loop

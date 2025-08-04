@@ -33,7 +33,10 @@ mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
     @time sph = SHTnsSphere(choices.nlat, nthreads)
 @info sph
 
-params = map(Float64, params)
+rmap(fun, x) = fun(x)
+rmap(fun, x::Union{Tuple, NamedTuple}) = map(y->rmap(fun,y), x)
+params = rmap(Float64, params)
+
 @info "Model setup..." choices params
 params = (Uplanet = params.radius * params.Omega, params...)
 
@@ -69,6 +72,7 @@ let
     function showdiff(tag) 
         var_HPE = getproperty(session_HPE, tag)[:,:,10]
         var_FCE = getproperty(session_FCE, tag)[:,:,10]
+        println()
         @info "showing $tag" extrema(var_HPE) extrema(var_FCE) var_HPE ≈ var_FCE
         show(heatmap(var_FCE - var_HPE))
         show(scatterplot(var_FCE[:], var_HPE[:]))
@@ -84,6 +88,8 @@ end
 scheme_FCE = choices.TimeScheme(model_FCE)
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
+#======================================================================#
+
 #=
 let 
     slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.);
@@ -95,8 +101,11 @@ let
 end;
 =#
 
+simulation(merge(choices, params), loop_HPE, state_HPE);
+
 @time tape = simulation(merge(choices, params), loop_FCE, state_FCE);
 
+#=
 include("movie.jl")
 
 @info diags
