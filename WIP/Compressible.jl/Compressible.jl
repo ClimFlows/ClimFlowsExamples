@@ -1,8 +1,9 @@
 # Fully compressible solver using spherical harmonics for horizontal discretization
+using InteractiveUtils
+using Revise
 
 using Pkg; Pkg.activate(@__DIR__);
 push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
-using Revise
 
 @time_imports using CFCompressible
 
@@ -95,7 +96,7 @@ end
 scheme_FCE = choices.TimeScheme(model_FCE)
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
-let 
+#= let 
     tau = 100.0
     slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., tau);
     slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau);
@@ -103,7 +104,7 @@ let
     @profview for _ in 1:10
         slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau)
     end
-end;
+end; =#
 
 simulation(merge(choices, params), loop_HPE, state_HPE);
 simulation(merge(choices, params), loop_FCE, state_FCE);

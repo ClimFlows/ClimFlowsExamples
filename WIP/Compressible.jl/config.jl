@@ -10,13 +10,13 @@ choices = (Fluid=IdealPerfectGas,
            newton=(niter=3,         # number of Newton iterations
                    flip_solve=false, # direction of tridiagonal solver passes  
                    update_W=true,   # update W during Newton iterations
-                   verbose=true))
+                   verbose=false))
 params = (
-          testcase = (; u0=0, up=1, lonc=pi, latc=0), # override test case defaults
+          testcase = (), # (; u0=0, up=1, lonc=pi, latc=0), # override test case defaults
           ptop = 225.52395239472398,
           pb=1e5,
           rhob=1e5, # 100.0,
-          gravity= 9.81,
+          gravity= 1000, # 9.81,
           Phis=0,
           Cp=1000,
           kappa=2 / 7,
@@ -25,7 +25,7 @@ params = (
           radius=6.4e6,
           Omega=7.272e-5,
           hyperdiff_nu=0, # 0.002,
-          courant=1.5,
+          courant=3.0,
           dt=1000,
-          ndays=1/3, # 6,
-          interval=3600)
+          ndays=5,
+          interval=12*3600)

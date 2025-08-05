@@ -26,11 +26,21 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
+
+    let session = open(diags ; model, state)
+#        var = session.ulon[:,:,10]
+        var = session.surface_pressure
+        rvar = reverse(var; dims=1)
+        display(heatmap(rvar))
+#        show(heatmap(var-rvar))
+    end
+
     for iter = 1:N*nstep
         state::State
+
         advance!(state, solver, state, t, 1)
         session = open(diags ; model, state)
-        @info "run_loop iter = $iter / $(N*nstep)" extrema(session.surface_pressure)
+#        @info "run_loop iter = $iter / $(N*nstep)" extrema(session.surface_pressure)
 #        show(heatmap(session.surface_pressure))
 #        show(heatmap(session.Phi_dot[:,:,10]))
 
@@ -43,9 +53,7 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 #        state = (; state..., mass_consvar_spec, uv_spec)
     end
 
-    session = open(diags ; model, state)
-    show(heatmap(session.surface_pressure))
-
+    
 end
 
 function vertical_remap(model, state, scratch = void)
