@@ -199,15 +199,15 @@ function fast_tendencies_uv!(duv_spec, scratch, model, sph, sk, dHdm, dHdS)
     (; fx, fy, s_gradT_spec, dHdS_spec, grad_dHdS, dHdm_spec) = scratch
 
     dHdS_spec = analysis_scalar!(dHdS_spec, erase(dHdS), sph)
-    (ux, uy) = grad_dHdS = synthesis_spheroidal!(grad_dHdS, dHdS_spec, sph)
-    fx = @. fx = sk * ux
-    fy = @. fy = sk * uy
+    (gradx, grady) = grad_dHdS = synthesis_spheroidal!(grad_dHdS, dHdS_spec, sph)
+    fx = @. fx = sk * gradx
+    fy = @. fy = sk * grady
     s_gradT_spec = analysis_vector!(s_gradT_spec, erase(vector_spat(fx,fy)), sph)
 
     dHdm_spec = analysis_scalar!(dHdm_spec, erase(dHdm), sph)
     duv_spec = vector_spec(
         (@. duv_spec.spheroidal = -dHdm_spec-s_gradT_spec.spheroidal),
-        (@. duv_spec.toroidal = -s_gradT_spec.spheroidal),
+        (@. duv_spec.toroidal = -s_gradT_spec.toroidal),
     )
 
     return duv_spec, (; fx, fy, s_gradT_spec, dHdS_spec, grad_dHdS, dHdm_spec)
