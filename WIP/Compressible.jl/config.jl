@@ -8,7 +8,7 @@ choices = (Fluid=IdealPerfectGas,
            remap_period=0,
            nlat=64,
            newton=(niter=3,         # number of Newton iterations
-                   flip_solve=true, # direction of tridiagonal solver passes  
+                   flip_solve=false, # direction of tridiagonal solver passes  
                    update_W=true,   # update W during Newton iterations
                    verbose=false))
 params = (
@@ -27,5 +27,5 @@ params = (
           hyperdiff_nu=0, # 0.002,
           courant=1.5,
           dt=1000,
-          ndays=1/24, # 6,
+          ndays=6/24, # 6,
           interval=3600)

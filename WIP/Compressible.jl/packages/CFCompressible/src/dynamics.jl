@@ -10,7 +10,8 @@ using SHTnsSpheres: SHTnsSpheres, SHTnsSphere,
 using ..CFCompressible: FCE
 import ..CFCompressible: FCE_tendencies!
 
-using ..CFCompressible.VerticalDynamics: VerticalEnergy, bwd_Euler
+using ..CFCompressible.VerticalDynamics: VerticalEnergy, bwd_Euler, residual, tridiag_problem!, batched_tridiag_problem!
+using CFBatchSolvers: Solvers, SingleSolvers
 
 #= Units
 [m] = kg
@@ -50,6 +51,7 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::St
     # steps 1-3
     common = spatial_fields!(scratch.common, model, sph, state)
     # @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
+    batched_bwd_Euler!(model, common.ps, (common.Phil, common.Wl, common.mk, common.Sk), tau)
     Phil_new, Wl_new = bwd_Euler!(model, common.ps, (common.Phil, common.Wl, common.mk, common.Sk), tau)
     fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common, Phil_new, Wl_new)
 
@@ -309,16 +311,81 @@ end
 
 #================== backward Euler step ================#
 
+function batched_bwd_Euler!(model, ps, state, tau)
+    (; mgr, newton, vcoord, planet, gas, Phis, rhob) = model
+    (; niter, flip_solve, verbose) = newton
+    ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
+    H = VerticalEnergy(gas, gravity, Jac, ptop, Phis, ps, rhob)
+
+    (Phi_star, W_star, mk, Sk) = state
+    Wl, Phil, DPhil, dPhil = copy(W_star), copy(Phi_star), zero(Phi_star), similar(Phi_star)
+
+    verbose && @info "========= Start batched Newton iteration =======#" extrema(Phi_star)
+
+    function iteration(iter, tridiag_)
+        @. Phil = Phi_star + DPhil
+        (; R, A, B) = tri = batched_tridiag_problem!(tridiag_, mgr, H, (mk, Sk, Phil), Phi_star, W_star, tau)
+        Solvers.Thomas!(dPhil, A, B, R, flip_solve)
+        @. DPhil += dPhil
+
+        # verify batched_tridiag_problem! and batched_Thomas
+        if false
+            for i in axes(mk,1), j in axes(mk,2)
+                H_ij = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
+                column = (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])
+                rPhi, rW = residual(H_ij, tau, column, Phi_star[i,j,:], W_star[i,j,:])
+                scratch = tridiag_problem!(void, H_ij, tau, column, rPhi, rW)
+                dPhi = SingleSolvers.Thomas(A[i,j,:], B[i,j,:], R[i,j,:], flip_solve)
+
+                function isok(tag, a,b) 
+                    if sum(abs, b-a) > 1e-6*sum(abs, a)
+                        @warn "$tag not ok" i j sum(abs, a) sum(abs, b) sum(abs, b-a)
+                    end
+                end
+
+                isok(:A, scratch.A, A[i,j,:])
+                isok(:B, scratch.B, B[i,j,:])
+
+                if(sum(abs, dPhi)) > 1e-4 # do not check when dPhi is too small
+                    isok(:R, scratch.R, R[i,j,:])
+                    isok(:dPhi, dPhi, dPhil[i,j,:])
+                end
+            end
+        end
+
+        return tri
+    end
+
+    # first iteration
+    tridiag = iteration(1, void)
+    # next iterations
+    for iter in 2:niter
+        iteration(iter, tridiag)
+    end
+    @info "Batched update at iter=niter" extrema(DPhil) extrema(dPhil)
+    # update W
+    # Wl = inv_tau_g2 * (ml * DPhi[l])
+    return Phil, W_star, tridiag
+end
+
 function bwd_Euler!(model, ps, (Phil, Wl, mk, Sk), tau)
     (; newton, vcoord, planet, gas, Phis, rhob) = model
     ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
     
+    function bwd(scratch, i, j)
+        H = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
+        column = (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])
+        bwd_Euler(scratch, H, newton, tau, column)
+    end
+
     Phil_new, Wl_new = similar(Phil), similar(Wl)
+
     if tau>0
-        for i in axes(mk,1), j in axes(mk,2)
-            H = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
-            Phil_new[i,j,:], Wl_new[i,j,:] = bwd_Euler(H, newton, tau, (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])) 
-            newton = (typeof(newton))(newton.niter, newton.flip_solve, newton.update_W, false) # switch off verbosity
+        let tridiag = bwd(void, 1, 1)[3] # allocate `tridiag` scratch space
+            for i in axes(mk,1), j in axes(mk,2)
+                Phil_new[i,j,:], Wl_new[i,j,:], _ = bwd(tridiag, i,j)
+                newton = (typeof(newton))(newton.niter, newton.flip_solve, newton.update_W, false) # switch off verbosity
+            end
         end
     else
         @. Phil_new = Phil

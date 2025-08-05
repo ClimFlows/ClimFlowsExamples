@@ -2,22 +2,24 @@ module VerticalDynamics
 
 import CFDomains
 import CFBatchSolvers: SingleSolvers as Solvers
+using MutatingOrNot: void, similar!
+using ManagedLoops: @with, @vec
 
 using ..CFCompressible: NewtonSolve
 
-struct VerticalEnergy{Gas,F}
+struct VerticalEnergy{Gas,F,A}
     gas::Gas
     gravity::F
     # Jacobian such that m = ρJ∂Φ/∂η , dM = ρJ dΦ d²S
     # different conventions possible, J = a/b with:
     #   a=L^2 (m in Newton or kg, S unitless)
     #   a=1 (m in Pa or kg/m^2, S in m^2)
-    #   b=1 (M in kg, m in kg or kg/m^2)
-    #   b=g (M in Newton, incorporates gravity, m in Newton or Pa)
+    #   b=g (M in kg, m in kg or kg/m^2)
+    #   b=1 (M in Newton, incorporates gravity, m in Newton or Pa)
     J::F  
     ptop::F # pressure at domain top
-    Phis::F # surface geopotential
-    pb::F   # equilibrium bottom pressure, for non-rigid ground
+    Phis::A # surface geopotential, can be a 2D array
+    pb::A   # equilibrium bottom pressure, for non-rigid ground - can be a 2D array
     rhob::F # stiffness of bottom BC: p_bot = pb + rhob*(Phi-Phis)
 end
 
@@ -236,10 +238,13 @@ function hydrostatic_geopotential!(H, m, S, Phi)
     return Phi
 end
 
-function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
+function tridiag_problem!(tridiag, H, tau, (Phi, W, m, S), rPhi, rW)
     (; gas, gravity, rhob, J) = H
     Nz = length(m)
-    ml, A, B, R = map(x -> fill(NaN, size(x)), (Phi, m, Phi, Phi))
+    ml = similar!(tridiag.ml, Phi)
+    R = similar!(tridiag.R, Phi)
+    B = similar!(tridiag.B, Phi)
+    A = similar!(tridiag.A, m)
 
     # ml
     ml[1] = m[1] / 2
@@ -271,29 +276,83 @@ function tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
         B[Nz + 1] = A[Nz] + ml_g2
         R[Nz + 1] = ml_g2 * rPhi[Nz + 1] + tau * rW[Nz + 1]
     end
-    return A, B, R, ml
+    return (; A, B, R, ml)
 end
 
-function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
+function batched_tridiag_problem!(tridiag, mgr, H, state, Phi_star, W_star, tau)
+    (; Phis, pb, rhob, J, ptop, gravity, gas) = H  # Phis and pb are 2D arrays
+    (m, S, Phi) = state # W terms cancel out => ignore W and let W=0
+
+    Jp = similar!(tridiag.Jp, m)
+    A = similar!(tridiag.A, m)
+    @with mgr let (irange, jrange, krange) = axes(m)
+        @inbounds for j in jrange, k in krange
+            @vec for i in irange
+                invm = inv(m[i,j,k])
+                consvar = invm * S[i,j,k] 
+                vol = J * invm * (Phi[i,j,k + 1] - Phi[i,j,k])
+                p = @inline gas(:v, :consvar).pressure(vol, consvar)
+                Jp[i,j,k] = J * p
+                # off-diagonal coeffcient A[k]
+                T = @inline gas(:p, :v).temperature(p, vol)
+                c2 = @inline gas(:p, :T).sound_speed2(p, T)
+#                c2 = @inline gas(:v, :consvar).sound_speed2(vol, consvar)
+                A[i,j,k] = c2 * invm * (J * tau / vol)^2
+            end
+        end
+    end
+
+    R = similar!(tridiag.R, Phi)
+    B = similar!(tridiag.B, Phi)
+    @with mgr let (irange, jrange, lrange) = axes(Phi)
+        Nz = size(m,3)
+        @inbounds for j in jrange, l in lrange
+            @vec for i in irange
+                if l == 1
+                    Jp_up = Jp[i,j,l] 
+                    Jp_down = J * (pb[i,j] - rhob * (Phi[i,j,1] - Phis[i,j]) ) 
+                    Al = A[i,j,l] + tau^2 * J * rhob # bottom BC
+                    ml = m[i,j,1] / 2
+                elseif l == Nz + 1
+                    Jp_up = J*ptop
+                    Jp_down = Jp[i,j,l-1] 
+                    Al = A[i,j,l-1]
+                    ml = m[i,j,Nz] / 2
+                else
+                    Jp_up = Jp[i,j,l] 
+                    Jp_down = Jp[i,j,l-1] 
+                    Al = A[i,j,l]+A[i,j,l-1]
+                    ml = (m[i,j,l - 1] + m[i,j,l]) / 2
+                end
+                force = ml + (Jp_up-Jp_down) # downward force
+                ml_g2 = (gravity^-2) * ml
+                R[i,j,l] = ml_g2 * (Phi_star[i,j,l] - Phi[i,j,l]) + tau * (W_star[i,j,l] - tau * force)
+                B[i,j,l] = ml_g2 + Al
+            end
+        end
+    end
+
+    return (; Jp, R, A , B)
+end
+
+function bwd_Euler(tridiag_, H::VerticalEnergy, newton::NewtonSolve, tau, state)
     (; gravity) = H
     (; niter, flip_solve, update_W, verbose) = newton
 
     inv_tau_g2 = inv(tau * gravity^2)
     (Phi_star, W_star, m, S) = state
-#    Phi = hydrostatic_geopotential!(H, m, S, copy(Phi_star))
     Phi = copy(Phi_star)
     DPhi = Phi-Phi_star
     W = copy(W_star)
 
     verbose && @info "========= Start Newton iteration =======#" extrema(Phi_star) extrema(Phi) extrema(DPhi)
 
-    for iter in 1:niter
+    function iteration(iter, scratch_)
         @. Phi = Phi_star + DPhi
         rPhi, rW = residual(H, tau, (Phi, W, m, S), Phi_star, W_star)
-        A, B, R, ml = tridiag_problem(H, tau, Phi, W, m, S, rPhi, rW)
+        (; A, B, R, ml) = scratch = tridiag_problem!(scratch_, H, tau, (Phi, W, m, S), rPhi, rW)
 
         verbose && @info "Residuals at iter=$iter" L2(R./ml) L2(rW./ml)
-
         dPhi = Solvers.Thomas(A, B, R, flip_solve)
         @. DPhi += dPhi
 
@@ -315,9 +374,17 @@ function bwd_Euler(H::VerticalEnergy, newton::NewtonSolve, tau, state)
                 W[l] = inv_tau_g2 * (ml * DPhi[l])
             end
         end
+        return scratch
     end
 
-    return Phi, W, m, S
+    # first iteration
+    tridiag = iteration(1, tridiag_)
+    # next iterations
+    for iter in 2:niter
+        iteration(iter, tridiag)
+    end    
+
+    return Phi, W, tridiag
 end
 
 L2(x) = sqrt(sum(x->x^2, x))
