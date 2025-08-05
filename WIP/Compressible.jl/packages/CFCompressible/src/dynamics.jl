@@ -9,9 +9,7 @@ using SHTnsSpheres: SHTnsSpheres, SHTnsSphere,
 
 using ..CFCompressible: FCE
 import ..CFCompressible: FCE_tendencies!
-
-using ..CFCompressible.VerticalDynamics: VerticalEnergy, bwd_Euler, residual, tridiag_problem!, batched_tridiag_problem!
-using CFBatchSolvers: Solvers, SingleSolvers
+using ..CFCompressible.VerticalDynamics: VerticalEnergy, batched_bwd_Euler!, ref_bwd_Euler!
 
 #= Units
 [m] = kg
@@ -313,130 +311,6 @@ function curl_form!(duv_spec, scratch, fcov, sph, state, fluxes, mk)
         (@. duv_spec.toroidal = qflux_spec.toroidal),
     )
     return duv_spec, (; zeta_spec, zeta, qfx, qfy, qflux_spec, B_spec)
-end
-
-#================== backward Euler step ================#
-
-function batched_bwd_Euler!(model, ps, state, tau, check=false)
-    (; mgr, newton, vcoord, planet, gas, Phis, rhob) = model
-    (; niter, flip_solve, verbose) = newton
-    ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
-    H = VerticalEnergy(gas, gravity, Jac, ptop, Phis, ps, rhob)
-
-    (mk, ml, Sk, Phi_star, W_star) = state
-    Wl, Phil, DPhil, dPhil = copy(W_star), copy(Phi_star), zero(Phi_star), similar(Phi_star)
-
-    verbose && @info "========= Start batched Newton iteration =======#" extrema(Phi_star)
-#=
-    function iteration(iter, tridiag_)
-        @. Phil = Phi_star + DPhil
-        (; R, A, B) = tri = batched_tridiag_problem!(tridiag_, mgr, H, (mk, Sk, Phil), Phi_star, W_star, tau)
-        Solvers.Thomas!(dPhil, A, B, R, flip_solve)
-        @. DPhil += dPhil
-
-        # verify batched_tridiag_problem! and batched_Thomas
-        if check
-            for i in axes(mk,1), j in axes(mk,2)
-                H_ij = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
-                column = (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])
-                rPhi, rW = residual(H_ij, tau, column, Phi_star[i,j,:], W_star[i,j,:])
-                scratch = tridiag_problem!(void, H_ij, tau, column, rPhi, rW)
-                dPhi = SingleSolvers.Thomas(A[i,j,:], B[i,j,:], R[i,j,:], flip_solve)
-
-                function isok(tag, a,b) 
-                    if sum(abs, b-a) > 1e-6*sum(abs, a)
-                        @warn "at iter=$iter, $tag not ok" i j sum(abs, a) sum(abs, b) sum(abs, b-a)
-                    end
-                end
-
-                isok(:A, scratch.A, A[i,j,:])
-                isok(:B, scratch.B, B[i,j,:])
-
-                if(sum(abs, dPhi)) > 1e-4 # do not check when dPhi is too small
-                    isok(:R, scratch.R, R[i,j,:])
-                    isok(:dPhi, dPhi, dPhil[i,j,:])
-                end
-            end
-        end
-
-        return tri
-    end
-=#
-    # first iteration
-    tridiag = batched_Newton_iteration(void, mgr, H, mk, Sk, Phi_star, W_star, Phil, DPhil, dPhil, tau, 1, flip_solve, check)
-    # next iterations
-    for iter in 2:niter
-        batched_Newton_iteration(tridiag, mgr, H, mk, Sk, Phi_star, W_star, Phil, DPhil, dPhil, tau, iter, flip_solve, check)
-    end
-    @info "Batched update after $niter Newton iterations" extrema(DPhil) extrema(dPhil)
-    # update W
-    if tau>0
-        inv_tau_g2 = inv(tau * gravity^2)
-        Wl = @. inv_tau_g2 * ml * DPhil
-    else
-        Wl = copy(W_star)
-    end
-    return Phil, Wl, tridiag
-end
-
-function batched_Newton_iteration(tridiag_, mgr, H, mk, Sk, Phi_star, W_star, Phil, DPhil, dPhil, tau, iter, flip_solve, check)
-    @. Phil = Phi_star + DPhil
-    (; R, A, B) = tri = batched_tridiag_problem!(tridiag_, mgr, H, (mk, Sk, Phil), Phi_star, W_star, tau)
-    Solvers.Thomas!(dPhil, A, B, R, flip_solve)
-    @. DPhil += dPhil
-
-    # verify batched_tridiag_problem! and batched_Thomas
-    check && for i in axes(mk,1), j in axes(mk,2)
-        H_ij = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
-        column = (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])
-        rPhi, rW = residual(H_ij, tau, column, Phi_star[i,j,:], W_star[i,j,:])
-        scratch = tridiag_problem!(void, H_ij, tau, column, rPhi, rW)
-        dPhi = SingleSolvers.Thomas(A[i,j,:], B[i,j,:], R[i,j,:], flip_solve)
-
-        function isok(tag, a,b) 
-            if sum(abs, b-a) > 1e-6*sum(abs, a)
-                @warn "at iter=$iter, $tag not ok" i j sum(abs, a) sum(abs, b) sum(abs, b-a)
-            end
-        end
-
-        isok(:A, scratch.A, A[i,j,:])
-        isok(:B, scratch.B, B[i,j,:])
-
-        if(sum(abs, dPhi)) > 1e-4 # do not check when dPhi is too small
-            isok(:R, scratch.R, R[i,j,:])
-            isok(:dPhi, dPhi, dPhil[i,j,:])
-        end
-    end
-
-    return tri
-end
-
-function bwd_Euler!(model, ps, state, tau)
-    (; newton, vcoord, planet, gas, Phis, rhob) = model
-    ptop, gravity, Jac = vcoord.ptop, planet.gravity, planet.radius^2/planet.gravity
-
-    (mk, ml, Sk, Phil, Wl) = state
-
-    function bwd(scratch, i, j)
-        H = VerticalEnergy(gas, gravity, Jac, ptop, Phis[i,j], ps[i,j], rhob)
-        column = (Phil[i,j,:], Wl[i,j,:], mk[i,j,:], Sk[i,j,:])
-        bwd_Euler(scratch, H, newton, tau, column)
-    end
-
-    Phil_new, Wl_new = similar(Phil), similar(Wl)
-
-    if tau>0
-        let tridiag = bwd(void, 1, 1)[3] # allocate `tridiag` scratch space
-            for i in axes(mk,1), j in axes(mk,2)
-                Phil_new[i,j,:], Wl_new[i,j,:], _ = bwd(tridiag, i,j)
-                newton = (typeof(newton))(newton.niter, newton.flip_solve, newton.update_W, false) # switch off verbosity
-            end
-        end
-    else
-        @. Phil_new = Phil
-        @. Wl_new = Wl
-    end
-    return Phil_new, Wl_new
 end
 
 #======================== utilities ====================#

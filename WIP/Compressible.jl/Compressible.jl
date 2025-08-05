@@ -38,8 +38,8 @@ rmap(fun, x::Union{Tuple, NamedTuple}) = map(y->rmap(fun,y), x)
 params = rmap(Float64, params)
 
 @info "Model setup..." choices params
-params = (Uplanet = params.radius * params.Omega, params...)
-
+params_testcase = (Uplanet = params.radius * params.Omega, params.testcase...)
+params = (testcase=params_testcase, params...)
 # initial condition
 
 loop_HPE, case = setup(choices, params, sph, mgr, HPE)
@@ -100,17 +100,15 @@ let
     slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., tau);
     slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau);
     @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau);
-    @profview for _ in 1:1
+    @profview for _ in 1:10
         slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau)
     end
 end;
 
+simulation(merge(choices, params), loop_HPE, state_HPE);
+simulation(merge(choices, params), loop_FCE, state_FCE);
 
 #=
-
-simulation(merge(choices, params), loop_HPE, state_HPE);
-
-@time tape = simulation(merge(choices, params), loop_FCE, state_FCE);
 
 
 include("movie.jl")
