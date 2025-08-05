@@ -95,23 +95,24 @@ end
 scheme_FCE = choices.TimeScheme(model_FCE)
 loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
 
-#=
-
 let 
-    slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., 0.);
-    slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
-    @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.);
+    tau = 100.0
+    slow, fast, scratch = CFTimeSchemes.tendencies!(void, void, void, model_FCE, state_FCE, 0., tau);
+    slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau);
+    @timev slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau);
     @profview for _ in 1:1
-        slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., 0.0)
+        slow, fast, scratch = CFTimeSchemes.tendencies!(slow, fast, scratch, model_FCE, state_FCE, 0., tau)
     end
 end;
-=#
+
+
+#=
 
 simulation(merge(choices, params), loop_HPE, state_HPE);
 
 @time tape = simulation(merge(choices, params), loop_FCE, state_FCE);
 
-#=
+
 include("movie.jl")
 
 @info diags

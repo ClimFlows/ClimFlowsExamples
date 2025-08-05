@@ -294,8 +294,7 @@ function batched_tridiag_problem!(tridiag, mgr, H, state, Phi_star, W_star, tau)
                 p = @inline gas(:v, :consvar).pressure(vol, consvar)
                 Jp[i,j,k] = J * p
                 # off-diagonal coeffcient A[k]
-                T = @inline gas(:p, :v).temperature(p, vol)
-                c2 = @inline gas(:p, :T).sound_speed2(p, T)
+                c2 = @inline gas(:p, :v).sound_speed2(p, vol)
 #                c2 = @inline gas(:v, :consvar).sound_speed2(vol, consvar)
                 A[i,j,k] = c2 * invm * (J * tau / vol)^2
             end
