@@ -64,10 +64,10 @@ end
 =#
 
 function uv(model, scratch)
-    (; U, V) = scratch.slow_mass.fluxes
+    (; Uxk, Uyk) = scratch.slow_mass.fluxes
     m = scratch.common.mk
     (; radius) = model.planet
-    return (ucolat=(@. radius*U/m), ulon=(@. radius*V/m))
+    return (ucolat=(@. radius*Uxk/m), ulon=(@. radius*Uyk/m))
 end
 
 function specific_volume(model, scratch)

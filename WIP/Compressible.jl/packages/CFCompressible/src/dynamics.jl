@@ -224,11 +224,11 @@ function mass_budgets!(dstate, scratch, model, sph, new_state, common)
     (vx, vy) = uv = synthesis_vector!(scratch.uv, uv_spec, sph)
     fluxes = NH_fluxes!(scratch.fluxes, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
 
-    # air mass budget FIXME: we cannot erase U,V, they will be used for the curl form
-    flux_spec = analysis_vector!(scratch.flux_spec, vector_spat(fluxes.U, fluxes.V), sph)
+    # air mass budget FIXME: we cannot erase Uxk,Uyk, they will be used for the curl form
+    flux_spec = analysis_vector!(scratch.flux_spec, vector_spat(fluxes.Uxk, fluxes.Uyk), sph)
     dmass_air_spec = @. dstate.mass_air_spec = -flux_spec.spheroidal * laplace
     # consvar mass budget
-    flux_spec = analysis_vector!(scratch.flux_spec, erase(vector_spat(fluxes.sU, fluxes.sV)), sph)
+    flux_spec = analysis_vector!(scratch.flux_spec, erase(vector_spat(fluxes.sUx, fluxes.sUy)), sph)
     dmass_consvar_spec = @. dstate.mass_consvar_spec = -flux_spec.spheroidal * laplace
     # W budget
     Wflux_spec = analysis_vector!(scratch.Wflux_spec, erase(vector_spat(fluxes.wU, fluxes.wV)), sph)
@@ -240,12 +240,12 @@ function mass_budgets!(dstate, scratch, model, sph, new_state, common)
 end
 
 function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
-    # covariant momentum (u,v) => contravariant mass flux (U,V)
+    # covariant momentum (vx,vy) => contravariant mass flux (Ux,Uy)
     B = similar!(scratch.B, mk)
-    U = similar!(scratch.U, vx)
-    V = similar!(scratch.V, vy)
-    sU = similar!(scratch.sU, vx)
-    sV = similar!(scratch.sV, vy)
+    Uxk = similar!(scratch.Uxk, vx)
+    Uyk = similar!(scratch.Uyk, vy)
+    sUx = similar!(scratch.sUx, vx)
+    sUy = similar!(scratch.sUy, vy)
     wU = similar!(scratch.wU, Wl)
     wV = similar!(scratch.wU, Wl)
     dPhi = similar!(scratch.dPhi, Wl)
@@ -258,29 +258,29 @@ function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
             @vec for i in irange
                 wl_d = Wl[i,j,k]/ml[i,j,k]
                 wl_u = Wl[i,j,k+1]/ml[i,j,k+1]
-                # U = a⁻² m (v - W/m ∇Φ), sU
-                U[i,j,k] = factor*mk[i,j,k]*(vx[i,j,k]-(wl_d*gx[i,j,k]+wl_u*gx[i,j,k+1])/2)
-                V[i,j,k] = factor*mk[i,j,k]*(vy[i,j,k]-(wl_d*gy[i,j,k]+wl_u*gy[i,j,k+1])/2)
-                sU[i,j,k] = sk[i,j,k] * U[i,j,k]
-                sV[i,j,k] = sk[i,j,k] * V[i,j,k]
+                # U = a⁻² m (v - W/m ∇Φ), sUx
+                Uxk[i,j,k] = factor*mk[i,j,k]*(vx[i,j,k]-(wl_d*gx[i,j,k]+wl_u*gx[i,j,k+1])/2)
+                Uyk[i,j,k] = factor*mk[i,j,k]*(vy[i,j,k]-(wl_d*gy[i,j,k]+wl_u*gy[i,j,k+1])/2)
+                sUx[i,j,k] = sk[i,j,k] * Uxk[i,j,k]
+                sUy[i,j,k] = sk[i,j,k] * Uyk[i,j,k]
             end
         end
         # interfaces
         @inbounds for j in jrange, l in 1:Nz+1
             @vec for i in irange
                 if l==1
-                    Ul = U[i,j,l]/2
-                    Vl = V[i,j,l]/2
+                    Uxl = Uxk[i,j,l]/2
+                    Uyl = Uyk[i,j,l]/2
                 elseif l==Nz+1                    
-                    Ul = U[i,j,l-1]/2
-                    Vl = V[i,j,l-1]/2
+                    Uxl = Uxk[i,j,l-1]/2
+                    Uyl = Uyk[i,j,l-1]/2
                 else
-                    Ul = (U[i,j,l]+U[i,j,l-1])/2
-                    Vl = (V[i,j,l]+V[i,j,l-1])/2
+                    Uxl = (Uxk[i,j,l]+Uxk[i,j,l-1])/2
+                    Uyl = (Uyk[i,j,l]+Uyk[i,j,l-1])/2
                 end
                 wl = Wl[i,j,l]/ml[i,j,l]
-                wU[i,j,l], wV[i,j,l] = Ul * wl, Vl * wl # wU → ∂ₜW = -∇⋅(wU)
-                dPhi[i,j,l] = -(Ul*gx[i,j,l]+Vl*gy[i,j,l])/ml[i,j,l] # ∂ₜΦ = -u⋅∇Φ
+                wU[i,j,l], wV[i,j,l] = Uxl * wl, Uyl * wl # wU → ∂ₜW = -∇⋅(wU)
+                dPhi[i,j,l] = -(Uxl*gx[i,j,l]+Uyl*gy[i,j,l])/ml[i,j,l] # ∂ₜΦ = -u⋅∇Φ
             end
         end
         # full levels again: Bernoulli function dH/dm
@@ -288,21 +288,21 @@ function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
             @vec for i in irange
                 X_d = dPhi[i,j,k]*(Wl[i,j,k]/ml[i,j,k])  # (W/m) (-u⋅∇Φ) → m²⋅s⁻²
                 X_u = dPhi[i,j,k+1]*(Wl[i,j,k+1]/ml[i,j,k+1])
-                K = (U[i,j,k]^2+V[i,j,k]^2)/(2*factor*mk[i,j,k]^2) # a^2 u⋅u/2
+                K = (Uxk[i,j,k]^2+Uyk[i,j,k]^2)/(2*factor*mk[i,j,k]^2) # a^2 u⋅u/2
                 B[i,j,k] = K - (X_d+X_u)/2  # u⋅u/2 + (u⋅∇Φ)W/m
             end
         end
     end # @with
-    return (; U, V, sU, sV, wU, wV, dPhi, B)
+    return (; Uxk, Uyk, sUx, sUy, wU, wV, dPhi, B)
 end
 
 function curl_form!(duv_spec, scratch, fcov, sph, state, fluxes, mk)
-    (; U, V, B) = fluxes
+    (; Uxk, Uyk, B) = fluxes
     (; laplace) = sph
     zeta_spec = @. scratch.zeta_spec = -laplace * state.uv_spec.toroidal # curl
     zeta = synthesis_scalar!(scratch.zeta, zeta_spec, sph)
-    qfx = @. scratch.qfx =  V * (zeta + fcov)/mk
-    qfy = @. scratch.qfy =  -U * (zeta + fcov)/mk
+    qfx = @. scratch.qfx =  Uyk * (zeta + fcov)/mk
+    qfy = @. scratch.qfy =  -Uxk * (zeta + fcov)/mk
     qflux_spec = analysis_vector!(scratch.qflux_spec, erase(vector_spat(qfx, qfy)), sph)
 
     B_spec = analysis_scalar!(scratch.B_spec, erase(B), sph)
