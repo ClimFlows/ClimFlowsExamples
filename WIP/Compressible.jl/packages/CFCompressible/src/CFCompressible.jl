@@ -52,7 +52,7 @@ include("horizontal_energies.jl")
 include("dynamics.jl")
 include("NH_state.jl")
 include("diagnostics.jl")
-include("tests.jl")
+# include("tests.jl")
 
 diagnostics(::FCE) = Diagnostics.diagnostics()
 

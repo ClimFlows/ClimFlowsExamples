@@ -18,7 +18,7 @@ using InteractiveUtils
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
-    using ClimFlowsTestCases: Jablonowski06
+    using ClimFlowsTestCases: Jablonowski06, DCMIP
 
     using UnicodePlots: heatmap, scatterplot
 #    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa

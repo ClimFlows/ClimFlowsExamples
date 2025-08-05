@@ -106,7 +106,7 @@ loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_
     end
 end; =#
 
-simulation(merge(choices, params), loop_HPE, state_HPE);
+# simulation(merge(choices, params), loop_HPE, state_HPE);
 simulation(merge(choices, params), loop_FCE, state_FCE);
 
 #=

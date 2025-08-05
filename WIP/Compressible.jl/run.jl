@@ -10,6 +10,8 @@ struct TimeLoop{Dyn,Solver,Filter,Diags}
     mutating::Bool
 end
 
+slice(x) = transpose(x[div(size(x,1), 2), :,:])
+
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, remap_period, dissipation, diags) = info
     if mutating
@@ -20,6 +22,9 @@ function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     return TimeLoop(model, solver, remap_period, dissipation, diags, mutating)
 end
 
+plotmap(x)=display(heatmap(reverse(x; dims=1)))
+plotslice(x)=display(heatmap(slice(x)))
+
 # the extra parameter `dt` is for benchmarking purposes only
 function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = timeloop.solver.dt) where State
     (; diags, solver, model, dissipation, remap_period, mutating) = timeloop
@@ -28,10 +33,15 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
 
     let session = open(diags ; model, state)
-#        var = session.ulon[:,:,10]
-        var = session.surface_pressure
-        rvar = reverse(var; dims=1)
-        display(heatmap(rvar))
+        ps = session.surface_pressure
+#        plotmap(ps)
+        Phi0 = session.scratch.common.Phil[:,:,1]
+        plotmap(Phi0-model.Phis)
+#        var = session.scratch.common.Phil[:,:,1]-timeloop.model.Phis 
+#        plotslice(session.Phi_dot)
+        plotslice(session.temperature[:,:,1:end-10].-300)
+#        plotslice(session.pressure-session.hydrostatic_pressure)
+#        var = slice(session.pressure .* session.specific_volume)
 #        show(heatmap(var-rvar))
     end
 
@@ -130,15 +140,18 @@ function simulation(params, info, state0; ndays=params.ndays)
     tape = [state0]
     state = deepcopy(state0)
         for iter = 1:N
-            @info "t=$(div(interval*(iter-1),3600))h"
+            let hours = div(interval*(iter-1), 3600)
+                @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h"
+            end
             @time run_loop(timeloop, 1, interval, state, scratch)
             push!(tape, deepcopy(state))
             if mod(params.interval * iter, 86400) == 0
-                @info "day $(params.interval*iter/86400)"
-                display(heatmap(diag(state)))
+#                @info "day $(params.interval*iter/86400)"
+#                display(heatmap(diag(state)))
             end
         end
-    return tape
+#    return tape
+    return nothing
 end
 
 function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
