@@ -11,16 +11,9 @@ includet("setup.jl");
 include("config.jl");
 includet("run.jl");
 
-CFTimeSchemes.tendencies!(slow, fast, scratch, model::CFCompressible.FCE, state, t, dt) = 
-    CFCompressible.tendencies!(slow, fast, scratch, model, state, t, dt )
-
-function CFTimeSchemes.model_dstate(::CFCompressible.FCE, state, _)
-    rsim(x::AbstractArray) = similar(x)
-    rsim(x::NamedTuple) = map(rsim, x)
-    return rsim(state)
-end
-
 #============================  main program =========================#
+
+choices, params = experiment(choices, params)
 
 threadinfo()
 nthreads = 1 # Threads.nthreads()
@@ -94,7 +87,7 @@ end
 #======================================================================#
 
 scheme_FCE = choices.TimeScheme(model_FCE)
-loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE)
+loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_HPE.dissipation, diags_FCE, choices.quicklook)
 
 #= let 
     tau = 100.0
@@ -106,8 +99,8 @@ loop_FCE = TimeLoopInfo(sph, model_FCE, scheme_FCE, loop_HPE.remap_period, loop_
     end
 end; =#
 
-# simulation(merge(choices, params), loop_HPE, state_HPE);
 simulation(merge(choices, params), loop_FCE, state_FCE);
+simulation(merge(choices, params), loop_HPE, state_HPE);
 
 #=
 

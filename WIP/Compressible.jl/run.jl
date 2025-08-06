@@ -10,8 +10,6 @@ struct TimeLoop{Dyn,Solver,Filter,Diags}
     mutating::Bool
 end
 
-slice(x) = transpose(x[div(size(x,1), 2), :,:])
-
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, remap_period, dissipation, diags) = info
     if mutating
@@ -22,9 +20,6 @@ function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     return TimeLoop(model, solver, remap_period, dissipation, diags, mutating)
 end
 
-plotmap(x)=display(heatmap(reverse(x; dims=1)))
-plotslice(x)=display(heatmap(slice(x)))
-
 # the extra parameter `dt` is for benchmarking purposes only
 function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = timeloop.solver.dt) where State
     (; diags, solver, model, dissipation, remap_period, mutating) = timeloop
@@ -32,24 +27,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
 
-    let session = open(diags ; model, state)
-        ps = session.surface_pressure
-#        plotmap(ps)
-        Phi0 = session.scratch.common.Phil[:,:,1]
-        plotmap(Phi0-model.Phis)
-#        var = session.scratch.common.Phil[:,:,1]-timeloop.model.Phis 
-#        plotslice(session.Phi_dot)
-        plotslice(session.temperature[:,:,1:end-10].-300)
-#        plotslice(session.pressure-session.hydrostatic_pressure)
-#        var = slice(session.pressure .* session.specific_volume)
-#        show(heatmap(var-rvar))
-    end
-
     for iter = 1:N*nstep
         state::State
-
         advance!(state, solver, state, t, 1)
-        session = open(diags ; model, state)
+#        session = open(diags ; model, state)
 #        @info "run_loop iter = $iter / $(N*nstep)" extrema(session.surface_pressure)
 #        show(heatmap(session.surface_pressure))
 #        show(heatmap(session.Phi_dot[:,:,10]))
@@ -63,7 +44,6 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 #        state = (; state..., mass_consvar_spec, uv_spec)
     end
 
-    
 end
 
 function vertical_remap(model, state, scratch = void)
@@ -124,12 +104,10 @@ function max_time_step(info::TimeLoopInfo, courant, interval, state)
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
+timeinfo(hours) = @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h)"
 
 function simulation(params, info, state0; ndays=params.ndays)
-#    diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
-    diag(state) = reverse(open(diags; model, state).Phi_dot[:, :, 10]; dims=1)
-
-    (; model, diags) = info
+    (; model, diags, quicklook) = info
     @info "Starting simulation on $(model.mgr)."
     scratch = scratch_remap(diags, model, state0)
     (; courant, interval) = params
@@ -139,19 +117,16 @@ function simulation(params, info, state0; ndays=params.ndays)
 
     tape = [state0]
     state = deepcopy(state0)
-        for iter = 1:N
-            let hours = div(interval*(iter-1), 3600)
-                @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h)"
-            end
-            @time run_loop(timeloop, 1, interval, state, scratch)
-            push!(tape, deepcopy(state))
-            if mod(params.interval * iter, 86400) == 0
-#                @info "day $(params.interval*iter/86400)"
-#                display(heatmap(diag(state)))
-            end
-        end
-#    return tape
-    return nothing
+
+    for iter = 1:N
+        timeinfo(div(interval*(iter-1), 3600))
+        quicklook(open(diags ; model, state))    
+        @time run_loop(timeloop, 1, interval, state, scratch)
+        push!(tape, deepcopy(state))
+    end
+    timeinfo(div(interval*N, 3600))
+    quicklook(open(diags ; model, state))    
+    return nothing # tape
 end
 
 function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
@@ -164,3 +139,10 @@ function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
     @time tape = simulation(merge(choices, params), loop_HPE, state0);
 end;
 
+# for quicklooks
+slice(x) = transpose(x[div(size(x,1), 2), :,:])
+fliplat(x) = reverse(x; dims=1)
+Linf(x) = maximum(abs,x)
+sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
+plotmap(x) = display(heatmap(fliplat(x)))
+plotslice(x) = display(heatmap(slice(x)))

@@ -58,11 +58,11 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::St
 
     fast_spat = fast_tendencies_PhiW!(scratch.fast_spat, model, common, Phil_new, Wl_new)
 
-    let # debug
+    #= let # debug
         dw = fast_spat.dWl./common.ml
-        # @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
+        @info "tendencies! with tau = $tau" extrema(common.ps) extrema(common.Phil) extrema(dk(common.Phil))
         # @info "fast" extrema(fast_spat.dPhil) extrema(dw).*model.planet.gravity^2 
-    end
+    end =#
 
     dW_spec = analysis_scalar!(fast.W_spec, erase(fast_spat.dWl), sph)
     dPhi_spec = analysis_scalar!(fast.Phi_spec, erase(fast_spat.dPhil), sph)
@@ -82,10 +82,16 @@ function FCE_tendencies!(slow, fast, scratch, model, sph::SHTnsSphere, state::St
     # step 7
     duv_spec, slow_curl_form = curl_form!(slow.uv_spec, scratch.slow_curl_form, model.fcov, sph, new_state, slow_mass.fluxes, common.mk)
 
-    let # debug
+    #= let # debug
         fluxes = slow_mass.fluxes
         # @info "slow" extrema(fluxes.dPhi)
-    end
+        fliplat(x) = reverse(x; dims=1)
+        Linf(x) = maximum(abs,x)
+        sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
+        (; uv, grad_Phi, fluxes) = slow_mass
+        @info "symmetry" sym(model.Phis,-) sym(fluxes.B, -) sym(fluxes.dPhi, -) sym(fluxes.Uyk, -) sym(fluxes.wUy,-) sym(fluxes.sUy, -) sym(fast_uv.fy, -) sym(uv.ulon, -) sym(grad_Phi.ulon, -) sym(common.mk, -)  sym(common.ml, -) sym(common.Wl, -)
+        @info "antisymmetry" sym(fluxes.Uxk, +) sym(fluxes.wUx, +) sym(fluxes.sUx, +) sym(fast_uv.fx, +) sym(uv.ucolat, +) sym(grad_Phi.ucolat, +)
+    end =#
 
     # Done
     slow = model_state(dmass_air_spec, dmass_consvar_spec, duv_spec, dPhi_spec, dW_spec) # air, consvar, uv, Phi, W
@@ -224,14 +230,14 @@ function mass_budgets!(dstate, scratch, model, sph, new_state, common)
     (vx, vy) = uv = synthesis_vector!(scratch.uv, uv_spec, sph)
     fluxes = NH_fluxes!(scratch.fluxes, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
 
-    # air mass budget FIXME: we cannot erase Uxk,Uyk, they will be used for the curl form
+    # air mass budget FIXME: we cannot erase Uxk, Uyk, they will be used for the curl form
     flux_spec = analysis_vector!(scratch.flux_spec, vector_spat(fluxes.Uxk, fluxes.Uyk), sph)
     dmass_air_spec = @. dstate.mass_air_spec = -flux_spec.spheroidal * laplace
     # consvar mass budget
     flux_spec = analysis_vector!(scratch.flux_spec, erase(vector_spat(fluxes.sUx, fluxes.sUy)), sph)
     dmass_consvar_spec = @. dstate.mass_consvar_spec = -flux_spec.spheroidal * laplace
     # W budget
-    Wflux_spec = analysis_vector!(scratch.Wflux_spec, erase(vector_spat(fluxes.wU, fluxes.wV)), sph)
+    Wflux_spec = analysis_vector!(scratch.Wflux_spec, erase(vector_spat(fluxes.wUx, fluxes.wUy)), sph)
     dW_spec = @. dstate.W_spec = -Wflux_spec.spheroidal * laplace
     # Phi tendency
     dPhi_spec = analysis_scalar!(dstate.Phi_spec, erase(fluxes.dPhi), sph)
@@ -246,8 +252,8 @@ function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
     Uyk = similar!(scratch.Uyk, vy)
     sUx = similar!(scratch.sUx, vx)
     sUy = similar!(scratch.sUy, vy)
-    wU = similar!(scratch.wU, Wl)
-    wV = similar!(scratch.wU, Wl)
+    wUx = similar!(scratch.wUx, Wl)
+    wUy = similar!(scratch.wUy, Wl)
     dPhi = similar!(scratch.dPhi, Wl)
 
     factor = planet.radius^-2
@@ -279,7 +285,7 @@ function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
                     Uyl = (Uyk[i,j,l]+Uyk[i,j,l-1])/2
                 end
                 wl = Wl[i,j,l]/ml[i,j,l]
-                wU[i,j,l], wV[i,j,l] = Uxl * wl, Uyl * wl # wU → ∂ₜW = -∇⋅(wU)
+                wUx[i,j,l], wUy[i,j,l] = Uxl * wl, Uyl * wl # wU → ∂ₜW = -∇⋅(wU)
                 dPhi[i,j,l] = -(Uxl*gx[i,j,l]+Uyl*gy[i,j,l])/ml[i,j,l] # ∂ₜΦ = -u⋅∇Φ
             end
         end
@@ -293,7 +299,7 @@ function NH_fluxes!(scratch, mk, sk, vx, vy, gx, gy, Wl, ml, mgr, planet)
             end
         end
     end # @with
-    return (; Uxk, Uyk, sUx, sUy, wU, wV, dPhi, B)
+    return (; Uxk, Uyk, sUx, sUy, wUx, wUy, dPhi, B)
 end
 
 function curl_form!(duv_spec, scratch, fcov, sph, state, fluxes, mk)

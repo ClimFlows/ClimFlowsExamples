@@ -29,6 +29,24 @@ end
 @inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
 @inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
 
+CFTimeSchemes.tendencies!(slow, fast, scratch, model::CFCompressible.FCE, state, t, dt) = 
+    CFCompressible.tendencies!(slow, fast, scratch, model, state, t, dt )
+
+function CFTimeSchemes.model_dstate(::CFCompressible.FCE, state, _)
+    rsim(x::AbstractArray) = similar(x)
+    rsim(x::NamedTuple) = map(rsim, x)
+    return rsim(state)
+end
+
+override(a, b) = b
+override(a::NamedTuple ; b...) = override(a, NamedTuple(b))
+function override(a::NamedTuple, b::NamedTuple)
+    bb = (; a... , b...) # override a with b ; a field come first, then b fields not present in a
+    aa = (; bb... , a...) # extend a with new b ; extra fields ordered as in b
+    # now aa and bb have the same fields in the same order
+    map(override, aa, bb)
+end
+
 include("../../SpectralHPE.jl/NCARL30.jl")
 
 # everything that does not depend on initial condition
@@ -39,6 +57,7 @@ struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
     remap_period::Int
     dissipation::Filter
     diags::Diags
+    quicklook::Function # we can afford runtime dispatch when calling quicklook
 end
 
 #============== model setup =============#
@@ -60,7 +79,7 @@ function setup(choices, params, sph, mgr, Equation)
         theta = HyperDiffusion(model.domain, hd_n, hd_nu, :scalar),
     )
     diags = diagnostics(model)
-    info = TimeLoopInfo(sph, model, scheme, choices.remap_period, dissip, diags)
+    info = TimeLoopInfo(sph, model, scheme, choices.remap_period, dissip, diags, choices.quicklook)
 
     return info, case
 end
