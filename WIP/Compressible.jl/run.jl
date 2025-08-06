@@ -141,7 +141,7 @@ function simulation(params, info, state0; ndays=params.ndays)
     state = deepcopy(state0)
         for iter = 1:N
             let hours = div(interval*(iter-1), 3600)
-                @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h"
+                @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h)"
             end
             @time run_loop(timeloop, 1, interval, state, scratch)
             push!(tape, deepcopy(state))
