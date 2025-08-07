@@ -1,15 +1,14 @@
 # Fully compressible solver using spherical harmonics for horizontal discretization
 using InteractiveUtils
-using Revise
 
 using Pkg; Pkg.activate(@__DIR__);
-push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
+# push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
 
 @time_imports using CFCompressible
 
-includet("setup.jl");
+include("setup.jl");
 include("config.jl");
-includet("run.jl");
+include("run.jl");
 
 #============================  main program =========================#
 

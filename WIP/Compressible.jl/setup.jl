@@ -25,9 +25,7 @@ using InteractiveUtils
     using LinearAlgebra
 end
 
-# let CFTimeSchemes use our multi-thread manager when updating the model state
-@inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
-@inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
+# fill some CFTimeSchemes entry points
 
 CFTimeSchemes.tendencies!(slow, fast, scratch, model::CFCompressible.FCE, state, t, dt) = 
     CFCompressible.tendencies!(slow, fast, scratch, model, state, t, dt )
@@ -37,6 +35,13 @@ function CFTimeSchemes.model_dstate(::CFCompressible.FCE, state, _)
     rsim(x::NamedTuple) = map(rsim, x)
     return rsim(state)
 end
+#   use our multi-thread manager when updating the model state
+@inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
+@inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
+
+# small functions that help manage nested named tuples
+rmap(fun, x) = fun(x)
+rmap(fun, x::Union{Tuple, NamedTuple}) = map(y->rmap(fun,y), x)
 
 override(a, b) = b
 override(a::NamedTuple ; b...) = override(a, NamedTuple(b))
@@ -46,8 +51,8 @@ function override(a::NamedTuple, b::NamedTuple)
     # now aa and bb have the same fields in the same order
     map(override, aa, bb)
 end
-
-include("../../SpectralHPE.jl/NCARL30.jl")
+ 
+# include("../../SpectralHPE.jl/NCARL30.jl")
 
 # everything that does not depend on initial condition
 struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
@@ -83,3 +88,4 @@ function setup(choices, params, sph, mgr, Equation)
 
     return info, case
 end
+
