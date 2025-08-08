@@ -21,7 +21,7 @@ using InteractiveUtils
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
     using ClimFlowsTestCases: Jablonowski06, testcase, initial_flow, initial_surface
 
-    using UnicodePlots: heatmap
+    using UnicodePlots: heatmap, scatterplot
 end
 
 # let CFTimeSchemes use our multi-thread manager when updating the model state
