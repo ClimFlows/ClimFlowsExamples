@@ -46,11 +46,11 @@ model = (gas=choices.Fluid(merge(choices,params)), vcoord=SigmaCoordinate(choice
 H = Dyn.VerticalEnergy(model, params.gravity, params.Phis, params.pb, params.rhob)
 newton = NewtonSolve(merge(choices.newton, (; verbose=true))...)
 case = choices.TestCase(Float64; params.testcase...)
-state = (Phi, W, m, S) = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
+state = (_, _, m, S) = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
 onedim = OneDimModel(H, newton, m, S)
 
 solver = IVPSolver(TRBDF2(onedim), params.dt)
-Phis=(eltype(Phi))[]
+Phis=(eltype(m))[]
 for k=1:10
     (Phi, W, _, _) = state
     @info "==================== Time step $k ======================="
@@ -58,15 +58,3 @@ for k=1:10
     push!(Phis, Phi[1])
 end
 @info Phis
-
-if solver.scheme isa Midpoint
-    Phi_end = copy(Phi)
-
-    state = (Phi, W, m, S) = Dyn.initial(H, model.vcoord, case, 0.0, 0.0)
-    for k=1:10
-        @info "==================== Time step $k ======================="
-        Phitau, Wtau = fwd_Euler(H, params.dt/2, (Phi, W, m, S))
-        Phi, W = bwd_Euler(H, newton, params.dt/2, (Phitau, Wtau, m, S))
-    end
-    @info Phi ≈ Phi_end
-end

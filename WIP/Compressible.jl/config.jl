@@ -47,7 +47,7 @@ function exp_DCMIP21(choices, params; X=1)
         @info "symmetry" sym(ps,-) sym(Phis,-) sym(T10,-)
     end
     return override(choices ; TestCase=DCMIP{21}, quicklook),
-            override(params ; ptop = 3281.8, Omega=0, gravity=params.gravity/X, ndays=40)
+            override(params ; ptop = 3281.8, Omega=0, gravity=params.gravity/X, ndays=15)
 end
 
 # experiment(choices, params) = exp_Jablonowski06(choices, params; X=100)
