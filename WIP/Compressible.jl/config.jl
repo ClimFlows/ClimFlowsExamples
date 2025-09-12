@@ -1,17 +1,18 @@
 choices = (Fluid=IdealPerfectGas,
            TimeScheme=ARK_TRBDF2, # ARK_TRBDF2, # Midpoint, #BackwardEuler, # KinnmarkGray{2,5},
            consvar=:temperature,
-           Prec=Float64,
+           precision=Float64,
            nz=30,
            hyperdiff_n=3,
            remap_period=0,
-           nlat=64,
-           newton=(niter=3,          # number of Newton iterations
+           nlat=192,
+           meshname="uni.2deg.mesh.nc",
+           newton=(niter=5,          # number of Newton iterations
                    flip_solve=false, # direction of tridiagonal solver passes (`true` no yet implemented in batched HEVI solver)
                    update_W=true,    # update W during Newton iterations (ignored by batched HEVI solver)
                    verbose=false))
 params = (
-          testcase = (),
+          testcase = (xi_m=1e30, ),
           ptop = 225.52395239472398,
           rhob=1e5,
           gravity = 9.81,
@@ -37,12 +38,15 @@ function exp_Jablonowski06(choices, params; X=1)
 end
 
 function exp_DCMIP21(choices, params; X=1)
-    function quicklook(session) 
+    function quicklook(session, interp)
+        slice(x::Matrix, lev) = interp(x[lev,:])
+        slice(x::Array{3}, lev) = x[:,:,lev]
         ps = session.surface_pressure
         Phis = session.model.Phis
-        T = session.temperature[:,:,:].-300
-        T10 = T[:,:,10]
-        plotslice(T[:,:,1:end-10])
+        T = session.temperature.-300
+        @info "quicklook" size(T)
+        T10 = slice(T, 10)
+        # plotslice(T[:,:,1:end-10])
         plotmap(T10)
         @info "symmetry" sym(ps,-) sym(Phis,-) sym(T10,-)
     end
@@ -51,4 +55,5 @@ function exp_DCMIP21(choices, params; X=1)
 end
 
 # experiment(choices, params) = exp_Jablonowski06(choices, params; X=100)
-experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
+# experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
+experiment(choices, params) = exp_DCMIP21(choices, params)

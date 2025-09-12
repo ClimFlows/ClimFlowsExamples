@@ -93,25 +93,29 @@ function scratch_remap(diags, model, state)
     )
 end
 
-function max_time_step(info::TimeLoopInfo, courant, interval, state)
-    (; sphere, model, diags) = info
-    # time step based on maximum sound speed and courant number `courant`, which divides `interval`
+function max_time_step(sphere::VoronoiSphere, model, diags, state)
+    return 50. # FIXME :
+end
+
+function max_time_step(sphere, model, diags, state)
     session = open(diags; model, state)
     uv = session.uv
     cmax = maximum(session.sound_speed + @. sqrt(uv.ucolat^2 + uv.ulon^2))
-    dt = model.planet.radius * courant / cmax / sqrt(sphere.lmax * sphere.lmax + 1)
-    dt = divisor(dt, interval)
+    return model.planet.radius / cmax / sqrt(sphere.lmax * sphere.lmax + 1)
 end
 
 divisor(dt, T) = T / ceil(Int, T / dt)
+
 timeinfo(hours) = @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h)"
 
-function simulation(params, info, state0; ndays=params.ndays)
+function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
     (; model, diags, quicklook) = info
     @info "Starting simulation on $(model.mgr)."
-    scratch = scratch_remap(diags, model, state0)
+    # scratch = scratch_remap(diags, model, state0)
+    scratch = nothing
     (; courant, interval) = params
-    dt = max_time_step(info, courant, interval, state0)
+    dt = max_time_step(info.sphere, info.model, info.diags, state0)
+    dt = divisor(courant*dt, interval)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
     N = Int(ndays * 24 * 3600 / interval)
 
@@ -120,13 +124,13 @@ function simulation(params, info, state0; ndays=params.ndays)
 
     for iter = 1:N
         timeinfo(div(interval*(iter-1), 3600))
-        quicklook(open(diags ; model, state))    
+        quicklook(open(diags ; model, state), interp)
         @time run_loop(timeloop, 1, interval, state, scratch)
         push!(tape, deepcopy(state))
     end
     timeinfo(div(interval*N, 3600))
     quicklook(open(diags ; model, state))    
-    return nothing # tape
+    return tape
 end
 
 function run_Kinnmark_Gray(params, choices, sph, mgr; ndays=1)
@@ -144,5 +148,5 @@ slice(x) = transpose(x[div(size(x,1), 2), :,:])
 fliplat(x) = reverse(x; dims=1)
 Linf(x) = maximum(abs,x)
 sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
-plotmap(x) = display(heatmap(fliplat(x)))
+plotmap(x::Matrix) = display(heatmap(fliplat(x)))
 plotslice(x) = display(heatmap(slice(x)))

@@ -12,12 +12,12 @@ using InteractiveUtils
     using CFTimeSchemes: scratch_space, tendencies!, advance!
     using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2, ARK_TRBDF2
     using CFTimeSchemes: CFTimeSchemes, IVPSolver
-    using CFDomains: SigmaCoordinate, HyperDiffusion, void
-    using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
+    using CFDomains: VoronoiSphere, SigmaCoordinate, HyperDiffusion, void
 
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
+    using CFCompressible
     using ClimFlowsTestCases: Jablonowski06, DCMIP
 
     using UnicodePlots: heatmap, scatterplot
