@@ -13,6 +13,7 @@ choices = (Fluid=IdealPerfectGas,
                    verbose=false))
 params = (
           testcase = (xi_m=1e30, ),
+          wfactor = 1.0, # 1e4, # exaggerate vertical velocity in initial condition
           ptop = 225.52395239472398,
           rhob=1e5,
           gravity = 9.81,
@@ -55,5 +56,5 @@ function exp_DCMIP21(choices, params; X=1)
 end
 
 # experiment(choices, params) = exp_Jablonowski06(choices, params; X=100)
-# experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
-experiment(choices, params) = exp_DCMIP21(choices, params)
+experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
+# experiment(choices, params) = exp_DCMIP21(choices, params)

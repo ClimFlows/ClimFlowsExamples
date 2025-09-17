@@ -38,6 +38,7 @@ end
 #   use our multi-thread manager when updating the model state
 @inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
 @inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
+@inline CFTimeSchemes.Update.manage(x, mgr::LoopManager) = mgr[x]
 
 # small functions that help manage nested named tuples
 rmap(fun, x) = fun(x)
