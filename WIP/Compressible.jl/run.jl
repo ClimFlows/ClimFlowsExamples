@@ -94,7 +94,7 @@ function scratch_remap(diags, model, state)
 end
 
 function max_time_step(sphere::VoronoiSphere, model, diags, state)
-    return 50. # FIXME :
+    return 180/2.8 # works for 1deg Voronoi mesh (FIXME)
 end
 
 function max_time_step(sphere, model, diags, state)
@@ -123,13 +123,14 @@ function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
     state = deepcopy(state0)
 
     for iter = 1:N
-        timeinfo(div(interval*(iter-1), 3600))
-        quicklook(open(diags ; model, state), interp)
+        t = interval*(iter-1)
+        timeinfo(div(t, 3600))
+        quicklook(t, open(diags ; model, state), interp)
         @time run_loop(timeloop, 1, interval, state, scratch)
         push!(tape, deepcopy(state))
     end
     timeinfo(div(interval*N, 3600))
-    quicklook(open(diags ; model, state))    
+    quicklook(interval*iter, open(diags ; model, state), interp)    
     return tape
 end
 
@@ -148,5 +149,5 @@ slice(x) = transpose(x[div(size(x,1), 2), :,:])
 fliplat(x) = reverse(x; dims=1)
 Linf(x) = maximum(abs,x)
 sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
-plotmap(x::Matrix) = display(heatmap(fliplat(x)))
+plotmap(x::Matrix, title="") = display(heatmap(fliplat(x); title))
 plotslice(x) = display(heatmap(slice(x)))

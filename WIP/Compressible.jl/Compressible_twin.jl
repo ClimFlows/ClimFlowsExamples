@@ -32,7 +32,7 @@ function vplot(voronoi; lev=10)
     display(heatmap(voronoi))
 end
 
-function diffplot(title, voronoi, sp; lev=10)
+function diffplot(title, voronoi, sp; lev=30)
     vslice(x::Matrix) = x
     spslice(x::Matrix) = x
     vslice(x::Array{<:Any, 3}) = x[lev, :, :]
@@ -69,7 +69,7 @@ threadinfo()
 nthreads = 1 # Threads.nthreads()
 cpu, simd = PlainCPU(), VectorizedCPU(8)
 mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
-# mgr = cpu
+mgr = cpu
 
 choices, params = experiment(choices, params)
 params = rmap(Float64, params)
@@ -150,11 +150,16 @@ function CFTimeSchemes.tendencies!(slow, fast, tmp, model::FourModels, state, t,
 #        diffplot(stamp("Bernoulli (HPE)"), VHtmp.fast.fast_B, SHtmp.locals_duv_fast.B_spec)
 #        diffplot(stamp("Bernoulli (FCE)"), VCtmp.fast_VH.dHdm, SCtmp.fast_uv.dHdm_spec)
 #        diffplot(stamp("Δ(Bernoulli)"), VCtmp.fast_VH.dHdm-VHtmp.fast.fast_B, SCtmp.fast_uv.dHdm_spec-SHtmp.locals_duv_fast.B_spec)
-         diffplot(stamp("KE (HPE)"), VHtmp.slow.KE, SHtmp.locals_slow.B_spec)
-         diffplot(stamp("slow B (FCE)"), VCtmp.tmp_slow.B, SCtmp.slow_curl_form.B_spec)
-         diffplot(stamp("Δ(slow B)"), VCtmp.tmp_slow.B-VHtmp.slow.KE, SCtmp.slow_curl_form.B_spec-SHtmp.locals_slow.B_spec)
+        diffplot(stamp("air mass"), state.VFCE.mass_air, state.SFCE.mass_air_spec; lev=1)
+#        diffplot(stamp("KE (HPE)"), VHtmp.slow.KE, SHtmp.locals_slow.B_spec)
+#        diffplot(stamp("slow B (FCE)"), VCtmp.tmp_slow.B, SCtmp.slow_curl_form.B_spec)
+#        diffplot(stamp("Δ(slow B)"), VCtmp.tmp_slow.B-VHtmp.slow.KE, SCtmp.slow_curl_form.B_spec-SHtmp.locals_slow.B_spec)
 #        diffplot(stamp("∂ₜmass_air (HPE)"), VHslow.mass_air, SHslow.mass_air_spec)
 #        diffplot(stamp("∂ₜmass_air (FCE)"), VCslow.mass_air, SCslow.mass_air_spec)
+        VPhi = state.VFCE.Phi
+        SPhi = state.SFCE.Phi_spec
+        diffplot(stamp("δΦ"), VPhi[2:end,:]-VPhi[1:end-1,:], SPhi[:,2:end]-SPhi[:,1:end-1]; lev=1)
+
 #        diffplot(stamp("Δ(∂ₜmass_air)"), g*VCslow.mass_air-VHslow.mass_air, g*SCslow.mass_air_spec-SHslow.mass_air_spec)
         # diffplot(stamp("dmass_consvar"), VHslow.mass_consvar, SHslow.mass_consvar_spec)
         # diffplot(stamp("dmass_consvar"), vslow.mass_consvar, sslow.mass_consvar_spec, lev=5)
@@ -196,8 +201,8 @@ end
 
 scheme = choices.TimeScheme(model)
 solver = CFTimeSchemes.IVPSolver(scheme, 360.0)
-# @time future, t = CFTimeSchemes.advance!(void, solver, state, 0.0, 10*24)
-@time future, t = CFTimeSchemes.advance!(void, solver, state, 0.0, 10*24*10)
+@time future, t = CFTimeSchemes.advance!(void, solver, state, 0.0, 20)
+# @time future, t = CFTimeSchemes.advance!(void, solver, state, 0.0, 10*24*10)
 
 # CFCompressible.tendencies!(slow, fast, tmp_VFCE, model_VFCE, state_VFCE, 0., 100.);
 

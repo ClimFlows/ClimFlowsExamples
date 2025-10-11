@@ -23,6 +23,7 @@ using InteractiveUtils
     using UnicodePlots: heatmap, scatterplot
 #    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
     using LinearAlgebra
+    using Statistics: mean
 end
 
 # fill some CFTimeSchemes entry points

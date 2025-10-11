@@ -6,16 +6,16 @@ choices = (Fluid=IdealPerfectGas,
            hyperdiff_n=3,
            remap_period=0,
            nlat=192,
-           meshname="uni.2deg.mesh.nc",
-           newton=(niter=5,          # number of Newton iterations
+           meshname="uni.1deg.mesh.nc",
+           newton=(niter=3,          # number of Newton iterations
                    flip_solve=false, # direction of tridiagonal solver passes (`true` no yet implemented in batched HEVI solver)
                    update_W=true,    # update W during Newton iterations (ignored by batched HEVI solver)
                    verbose=false))
 params = (
-          testcase = (xi_m=1e30, ),
+          testcase = (), # xi_m=0.1,
           wfactor = 1.0, # 1e4, # exaggerate vertical velocity in initial condition
           ptop = 225.52395239472398,
-          rhob=1e5,
+          rhob=1e6,
           gravity = 9.81,
           Cp=1000,
           kappa=2/7,
@@ -39,22 +39,31 @@ function exp_Jablonowski06(choices, params; X=1)
 end
 
 function exp_DCMIP21(choices, params; X=1)
-    function quicklook(session, interp)
+    function quicklook(t, session, interp)
         slice(x::Matrix, lev) = interp(x[lev,:])
         slice(x::Array{3}, lev) = x[:,:,lev]
         ps = session.surface_pressure
         Phis = session.model.Phis
         T = session.temperature.-300
-        @info "quicklook" size(T)
-        T10 = slice(T, 10)
+        # @info "quicklook" size(T)
         # plotslice(T[:,:,1:end-10])
-        plotmap(T10)
-        @info "symmetry" sym(ps,-) sym(Phis,-) sym(T10,-)
+        # plotmap(slice(T, 30), "Temperature at level 30")
+        lev = 30
+        mass = session.state.mass_air
+        mm = mean(mass[lev,:])
+        mass = slice(mass, lev)
+        logmass = @. log10(abs(mass-mm)+1)
+        plotmap(logmass, "Air mass at t=$t s, level $lev")
+        @info "mean mass at t=$t s, level $lev" mm
+        dPhi = session.state.Phi[2:end,:]-session.state.Phi[1:end-1,:]
+        plotmap(slice(dPhi, lev), "Layer thickness at t=$t s, level $lev")
+        # @info "symmetry" sym(ps,-) sym(Phis,-) sym(T10,-)
     end
     return override(choices ; TestCase=DCMIP{21}, quicklook),
             override(params ; ptop = 3281.8, Omega=0, gravity=params.gravity/X, ndays=15)
 end
 
 # experiment(choices, params) = exp_Jablonowski06(choices, params; X=100)
-experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
 # experiment(choices, params) = exp_DCMIP21(choices, params)
+# experiment(choices, params) = exp_DCMIP21(choices, params; X=100)
+experiment(choices, params) = exp_DCMIP21(choices, params; X=500)
