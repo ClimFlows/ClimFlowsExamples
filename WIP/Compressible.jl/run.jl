@@ -25,6 +25,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
     (; diags, solver, model, dissipation, remap_period, mutating) = timeloop
     @assert mutating # FIXME
     t, nstep = zero(dt), round(Int, interval / dt)
+
+    if remap_period>0
+        _, scratch = vertical_remap!(void, void, model.domain.layer, model, state)
+    end
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
 
     for iter = 1:N*nstep
@@ -35,9 +39,9 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 #        show(heatmap(session.surface_pressure))
 #        show(heatmap(session.Phi_dot[:,:,10]))
 
-#        if remap_period>0 && mod(iter, remap_period)==0
-#            state = vertical_remap(model, state, scratch)
-#        end
+        if remap_period>0 && mod(iter, remap_period)==0
+            state = vertical_remap!(state, scratch, model.domain.layer, model, state)
+        end
 #        (; mass_consvar_spec, uv_spec) = state
 #        mass_consvar_spec = dissipation.theta(mass_consvar_spec, mass_consvar_spec)
 #        uv_spec = dissipation.zeta(uv_spec, uv_spec)
@@ -46,8 +50,12 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 
 end
 
-function vertical_remap(model, state, scratch = void)
-    sph = model.domain.layer
+# the extra parameter `dt` is for benchmarking purposes only
+function vertical_remap!(new, scratch, ::VoronoiSphere, model, state)
+    return CFHydrostatics.RemapVoronoi.remap!(new, scratch, model, state)
+end
+
+function vertical_remap!(new, scratch, sph::SHTnsSphere, model, state)
     mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.air, state.mass_air_spec, sph)
     massq_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.consvar, state.mass_consvar_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
@@ -63,34 +71,13 @@ function vertical_remap(model, state, scratch = void)
     reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(mass_spat, 3))
     mass_spat .= reshp(remapped.mass)*model.planet.radius^2
     massq_spat .= reshp(remapped.massq)
-    mass_air_spec = SHTnsSpheres.analysis_scalar!(state.mass_air_spec, mass_spat, sph)
-    mass_consvar_spec = SHTnsSpheres.analysis_scalar!(state.mass_consvar_spec, massq_spat, sph)
+    mass_air_spec = SHTnsSpheres.analysis_scalar!(new.mass_air_spec, mass_spat, sph)
+    mass_consvar_spec = SHTnsSpheres.analysis_scalar!(new.mass_consvar_spec, massq_spat, sph)
     ucolat, ulon = reshp(remapped.ux), reshp(remapped.uy)
-    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, (;ucolat, ulon), sph)
-    return (; mass_air_spec, mass_consvar_spec, uv_spec)
-end
+    uv_spec = SHTnsSpheres.analysis_vector!(new.uv_spec, (;ucolat, ulon), sph)
 
-function scratch_remap(diags, model, state)
-    flatten(x) = reshape(x, size(x, 1) * size(x, 2), size(x, 3))
-    flatten(x::NamedTuple) = map(flatten, x)
-
-    uv_spat = open(diags; model, state).uv # convoluted way to allocate spatial 3D fields
-    masses_spat = ( air=similar(uv_spat.ucolat), consvar=similar(uv_spat.ucolat) )
-
-    ux = flatten(similar(uv_spat.ucolat))
-    uy, mass, new_mass, massq, slope, q = (similar(ux) for _ = 1:6)
-    flux = similar(mass, (size(mass, 1), size(mass, 2) + 1))
-    fluxq = similar(flux)
-    return (;
-        masses_spat,
-        uv_spat,
-        flux,
-        fluxq,
-        new_mass,
-        slope,
-        q,
-        remapped = (; mass, massq, ux, uy),
-    )
+    scratch = (; masses_spat, uv_spat, flux, fluxq, new_mass, slope, q, remapped)
+    return (; mass_air_spec, mass_consvar_spec, uv_spec), scratch
 end
 
 function max_time_step(sphere::VoronoiSphere, model, diags, state)
@@ -130,7 +117,7 @@ function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
         push!(tape, deepcopy(state))
     end
     timeinfo(div(interval*N, 3600))
-    quicklook(interval*iter, open(diags ; model, state), interp)    
+    quicklook(interval*N, open(diags ; model, state), interp)    
     return tape
 end
 

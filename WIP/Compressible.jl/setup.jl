@@ -13,7 +13,7 @@ using InteractiveUtils
     using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2, ARK_TRBDF2
     using CFTimeSchemes: CFTimeSchemes, IVPSolver
     using CFDomains: VoronoiSphere, SigmaCoordinate, HyperDiffusion, void
-
+    using SHTnsSpheres: SHTnsSphere
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics

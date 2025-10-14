@@ -8,12 +8,16 @@ using Pkg; Pkg.activate(@__DIR__);
 @time_imports using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
 @time_imports using ClimFlowsPlots: SphericalInterpolations as Interp
 
+include("DCMIP2012_orog.jl")
 include("setup.jl");
 include("config.jl");
 include("run.jl");
+include("smooth.jl")
 
 rmap(fun, x) = fun(x)
+rmap(fun, x::Vector) = fun.(x)
 rmap(fun, x::Union{Tuple, NamedTuple}) = map(y->rmap(fun,y), x)
+rmap(fun, x::Interpolations.Extrapolation) = x
 
 #============================  main program =========================#
 
@@ -23,13 +27,6 @@ cpu, simd = PlainCPU(), VectorizedCPU(8)
 mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
 
 mgr = cpu
-
-@info "Model setup..." choices params
-choices, params = experiment(choices, params)
-params = rmap(Float64, params)
-params_testcase = (Uplanet = params.radius * params.Omega, params.testcase...)
-params = (testcase=params_testcase, params...)
-newton = CFCompressible.NewtonSolve(choices.newton...)
 
 reader = DYNAMICO_reader(ncread, DYNAMICO_meshfile(choices.meshname))
 vsphere = VoronoiSphere(reader; prec=choices.precision)
@@ -41,9 +38,39 @@ interp = let
     Interp.lonlat_interp(vsphere, lons, lats)
 end
 
+@info "Model setup..." choices params
+
+choices, params = experiment(choices, params)
+params = rmap(Float64, params)
+params_testcase = (Uplanet = params.radius * params.Omega, params.testcase...)
+params = (testcase=params_testcase, params...)
+newton = CFCompressible.NewtonSolve(choices.newton...)
+
 loop_VHPE, case = setup(choices, params, vsphere, mgr, HPE)
 diags_VHPE, model_VHPE = loop_VHPE.diags, loop_VHPE.model
 state_VHPE =  CFHydrostatics.initial_HPE(case, model_VHPE)
+# @profview tape = simulation(merge(choices, params, (; ndays=1/2, interval=180)), loop_VHPE, state_VHPE; interp);
+
+let 
+    n=3
+    Phis = model_VHPE.Phis   
+    Ai = vsphere.Ai
+    Ai = Ai/mean(Ai)
+    @info "no smoothing" extrema(Phis) maximum(normgrad(vsphere, Phis))
+    display(heatmap(interp(Phis)))
+
+    for Δ in [pi/720, pi/360, pi/180, pi/90, pi/60]
+        h = Helmholtz(Δ^2/n, vsphere, similar(vsphere.le_de))
+        Phis_smooth = Phis
+        for _ in 1:n
+            (Phis_smooth, stats) = cg(h, Ai.*Phis_smooth ; verbose=0)
+        end
+        @info "smoothing" Δ extrema(Phis_smooth) maximum(normgrad(vsphere, Phis_smooth))
+        display(heatmap(interp(Phis_smooth)))
+    end
+end
+
+
 
 model_VFCE = CFCompressible.FCE(model_VHPE, params.gravity, params.rhob, newton)
 state_VFCE = CFCompressible.NH_state.diagnose(model_VFCE, diags_VHPE, state_VHPE)
@@ -58,8 +85,9 @@ let
     @time tendencies!(slow, fast, tmp, model_VFCE, state_VFCE, 0., 100.)
 #    @time advance!(future, scheme_VFCE, state_VFCE, 0.0, 100., tmp)
 end; nothing
+
 loop_VFCE = TimeLoopInfo(vsphere, model_VFCE, scheme_VFCE, choices.remap_period, loop_VHPE.dissipation, diags_VFCE, choices.quicklook)
-@profview tape = simulation(merge(choices, params, (; ndays=1/2, interval=180)), loop_VFCE, state_VFCE; interp);
+# @profview tape = simulation(merge(choices, params, (; ndays=1/2, interval=180)), loop_VFCE, state_VFCE; interp);
 
 #=
 include("movie.jl")
@@ -74,31 +102,10 @@ include("movie.jl")
 @time movie(model, diags, tape, W850; filename = "W850.mp4")
 =#
 
-using Interpolations, NetCDF
-
-function get_topo(file)
-    topographies = Dict(
-        "etopo40.nc" => ("ETOPO40X", "ETOPO40Y", "ROSE"),
-        "etopo20.nc" => ("ETOPO20X1_1081", "ETOPO20Y", "ROSE"),
-        "etopo5.nc" => ("X", "Y", "bath"),
-    )
-    lon, lat, h = topographies[file]
-    to_rad = pi/180
-    file = joinpath(@__DIR__, file)
-    lon, lat, h = map(n->NetCDF.open(file, n), (lon, lat, h)) 
-    lon, lat, h = to_rad*lon[:], to_rad*lat[:], 9.81*h[:,:]
-    return lon.-mean(lon), lat.-mean(lat), @. max(0, h)
-end
-
-function to_voronoi(lon, lat, data)
-    nlat = size(data, 2)
-    itp = linear_interpolation(axes(data), data ; extrapolation_bc=(Periodic(), Line()))    
-    to_index, minlon = nlat/pi, minimum(lon)
-    lon = @. 1+mod(to_index*(lon-minlon), 2nlat)
-    lat = @. 1+to_index*(lat+pi/2)
-    return itp.(lon, lat)
-end
-
-lon, lat, orog = get_topo("etopo5.nc")
-@time orog_i = to_voronoi(vsphere.lon_i, vsphere.lat_i, orog);
-heatmap(interp(orog_i))
+#= (x, stats) = cg(A, b::AbstractVector{FC};
+                M=I, ldiv::Bool=false, radius::T=zero(T),
+                linesearch::Bool=false, atol::T=√eps(T),
+                rtol::T=√eps(T), itmax::Int=0,
+                timemax::Float64=Inf, verbose::Int=0, history::Bool=false,
+                callback=workspace->false, iostream::IO=kstdout)
+=#
