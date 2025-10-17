@@ -2,6 +2,16 @@ using Krylov: cg
 using CFDomains.Stencils
 using LoopManagers.ManagedLoops: @unroll
 
+function smoothed(sph, Phis, Δ ; n=3, verbose=0)
+    Ai = sph.Ai/mean(sph.Ai)
+    h = Helmholtz(Δ^2/n, sph, similar(sph.le_de))
+    Phis_smooth = Phis
+    for _ in 1:n
+        (Phis_smooth, _) = cg(h, Ai.*Phis_smooth ; verbose)
+    end
+    return Phis_smooth
+end
+
 struct Helmholtz{T, V<:VoronoiSphere{T}}
     Δ::T # smoothing length
     sph::V
@@ -19,12 +29,12 @@ end
 function normgrad(sph, x)
     g, y = similar(x), similar(sph.le_de)
     @inbounds for edge in eachindex(y)
-        grad = Stencils.gradient(vsphere, edge)
+        grad = Stencils.gradient(sph, edge)
         y[edge] = grad(x) # covariant gradient
     end
     @inbounds for (cell, deg) in enumerate(sph.primal_deg)
         @unroll deg in 5:7 begin
-            dp = Stencils.dot_product(vsphere, cell, Val(deg))
+            dp = Stencils.dot_product(sph, cell, Val(deg))
             g[cell] = sqrt(dp(y,y))
         end
     end

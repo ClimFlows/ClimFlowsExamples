@@ -27,85 +27,76 @@ cpu, simd = PlainCPU(), VectorizedCPU(8)
 mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
 
 mgr = cpu
+# mgr = simd
 
 reader = DYNAMICO_reader(ncread, DYNAMICO_meshfile(choices.meshname))
 vsphere = VoronoiSphere(reader; prec=choices.precision)
+@showtime vsphere_tree = Interp.spherical_tree(vsphere);
 @info vsphere
+
 interp = let
     nlat = choices.nlat
     dlat = 180/nlat
     lons, lats = dlat*(1:2nlat), dlat*(-nlat/2:nlat/2)
-    Interp.lonlat_interp(vsphere, lons, lats)
+    Interp.lonlat_interp(lons, lats, vsphere, vsphere_tree)
 end
 
-@info "Model setup..." choices params
+topo_raw = let 
+    _, _, topo = get_topo(choices.etopo)
+    lon = range(-pi, pi, size(topo, 1))
+    lat = range(-pi/2, pi/2, size(topo, 2))
+    Phis = linear_interpolation((lon, lat), topo; extrapolation_bc=(Periodic(), Line()))
+    Phis.(vsphere.lon_i, vsphere.lat_i)
+end;
 
-choices, params = experiment(choices, params)
-params = rmap(Float64, params)
-params_testcase = (Uplanet = params.radius * params.Omega, params.testcase...)
-params = (testcase=params_testcase, params...)
-newton = CFCompressible.NewtonSolve(choices.newton...)
+Δs = [pi/90, pi/180, pi/360, pi/720, 0.0]
+topos = [smoothed(vsphere, topo_raw, Δ) for Δ in Δs];
 
-loop_VHPE, case = setup(choices, params, vsphere, mgr, HPE)
-diags_VHPE, model_VHPE = loop_VHPE.diags, loop_VHPE.model
-state_VHPE =  CFHydrostatics.initial_HPE(case, model_VHPE)
-# @profview tape = simulation(merge(choices, params, (; ndays=1/2, interval=180)), loop_VHPE, state_VHPE; interp);
-
-let 
-    n=3
-    Phis = model_VHPE.Phis   
-    Ai = vsphere.Ai
-    Ai = Ai/mean(Ai)
-    @info "no smoothing" extrema(Phis) maximum(normgrad(vsphere, Phis))
-    display(heatmap(interp(Phis)))
-
-    for Δ in [pi/720, pi/360, pi/180, pi/90, pi/60]
-        h = Helmholtz(Δ^2/n, vsphere, similar(vsphere.le_de))
-        Phis_smooth = Phis
-        for _ in 1:n
-            (Phis_smooth, stats) = cg(h, Ai.*Phis_smooth ; verbose=0)
-        end
-        @info "smoothing" Δ extrema(Phis_smooth) maximum(normgrad(vsphere, Phis_smooth))
-        display(heatmap(interp(Phis_smooth)))
-    end
+for (Δ, topo) in zip(Δs, topos)
+    @info "smoothing" Δ extrema(topo) maximum(normgrad(vsphere, topo))
+    display(heatmap(interp(topo)))
 end
 
+function stable_time((choices, params), Δ, topo ; ndays=params.ndays, interval=params.interval)
+    params = rmap(Float64, params)
+    X = params.X # rescaling factor
 
+    @info "Model setup..." choices params Δ
+    Phis = Interp.linear_interpolator(topo/X, vsphere, vsphere_tree)
+    testcase = (; Phis, Uplanet = params.radius * params.Omega, params.testcase...)
+    params = (; params..., testcase)
 
-model_VFCE = CFCompressible.FCE(model_VHPE, params.gravity, params.rhob, newton)
-state_VFCE = CFCompressible.NH_state.diagnose(model_VFCE, diags_VHPE, state_VHPE)
-diags_VFCE = CFCompressible.diagnostics(model_VFCE)
+    loop_VHPE, case = setup(choices, params, vsphere, mgr, HPE)
+    diags_VHPE, model_VHPE = loop_VHPE.diags, loop_VHPE.model
+    state_VHPE =  CFHydrostatics.initial_HPE(case, model_VHPE)
 
-# to_deg(rad) = (180/pi)*rad
-# interp = Interp.lonlat_interp(vsphere, to_deg(sph.lon[1,:]), to_deg(sph.lat[:,1]))
+    @time tape = simulation(merge(choices, params, (; ndays, interval)), loop_VHPE, state_VHPE; interp);
+    stable_time_HPE = (length(tape)-1)*interval
 
-scheme_VFCE = choices.TimeScheme(model_VFCE)
-let 
-    slow, fast, tmp = tendencies!(void, void, void, model_VFCE, state_VFCE, 0., 0.)
-    @time tendencies!(slow, fast, tmp, model_VFCE, state_VFCE, 0., 100.)
-#    @time advance!(future, scheme_VFCE, state_VFCE, 0.0, 100., tmp)
-end; nothing
+    display(heatmap(interp(topo)))
+    display(heatmap(interp(model_VHPE.Phis)))
+    @info "Simulation length" Δ stable_time_HPE
 
-loop_VFCE = TimeLoopInfo(vsphere, model_VFCE, scheme_VFCE, choices.remap_period, loop_VHPE.dissipation, diags_VFCE, choices.quicklook)
-# @profview tape = simulation(merge(choices, params, (; ndays=1/2, interval=180)), loop_VFCE, state_VFCE; interp);
+    newton = CFCompressible.NewtonSolve(choices.newton...)
+    model_VFCE = CFCompressible.FCE(model_VHPE, params.gravity, params.rhob, newton)
+    state_VFCE = CFCompressible.NH_state.diagnose(model_VFCE, diags_VHPE, state_VHPE)
+    diags_VFCE = CFCompressible.diagnostics(model_VFCE)
+    scheme_VFCE = choices.TimeScheme(model_VFCE)
+    loop_VFCE = TimeLoopInfo(vsphere, model_VFCE, scheme_VFCE, choices.remap_period, loop_VHPE.dissipation, diags_VFCE, choices.quicklook)
 
-#=
-include("movie.jl")
-@time movie(model_FCE, diags_FCE, tape, T850; filename = "T850.mp4")
+    g = model_VFCE.planet.gravity
+    slope = maximum(normgrad(vsphere, topo))/g/model_VFCE.planet.radius
 
-@info diags
+    @showtime tape = simulation(merge(choices, params, (; ndays, interval)), loop_VFCE, state_VFCE; interp);
+    stable_time_FCE = (length(tape)-1)*interval
 
-@time save(tape; dmass, ps, T850, W850, Omega850, V850, W, Omega, dulat, pressure, geopotential)
+    display(heatmap(interp(model_VFCE.Phis)))
+    @info "Simulation length" g slope Δ stable_time_FCE
 
-@time movie(model_FCE, diags_FCE, tape, T850; filename = "T850.mp4")
-@time movie(model, diags, tape, Omega850; filename = "Omega850.mp4")
-@time movie(model, diags, tape, W850; filename = "W850.mp4")
-=#
+    X, g, slope, Δ, stable_time_HPE, stable_time_FCE # result of do ... end block
+end
 
-#= (x, stats) = cg(A, b::AbstractVector{FC};
-                M=I, ldiv::Bool=false, radius::T=zero(T),
-                linesearch::Bool=false, atol::T=√eps(T),
-                rtol::T=√eps(T), itmax::Int=0,
-                timemax::Float64=Inf, verbose::Int=0, history::Bool=false,
-                callback=workspace->false, iostream::IO=kstdout)
-=#
+stable_times = map(zip(Δs, topos)) do (Δ, topo)
+    stable_time(experiment(choices, params), Δ, topo ; interval=3600, ndays=1/24)
+end
+@info "Model stability" stable_times

@@ -19,7 +19,8 @@ struct DCMIP21_custom{P} <: ClimFlowsTestCases.TestCaseHPE
         # non-generic parameters
         Rd, T0 = 287.0, 300.0 # from DCMIP 2012 document v1.6_23 pp. 4, 30
         p = (p0=1e5, pv0=Rd*T0, u0=20.0, Phis)
-        p = rmap(F, override(p, NamedTuple(user)))
+        p = override(p, NamedTuple(user))
+#        p = rmap(F, override(p, NamedTuple(user)))
         new{typeof(p)}(p)
     end
 

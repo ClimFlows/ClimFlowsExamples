@@ -40,7 +40,7 @@ function run_loop(timeloop::TimeLoop, N, interval, state::State, scratch; dt = t
 #        show(heatmap(session.Phi_dot[:,:,10]))
 
         if remap_period>0 && mod(iter, remap_period)==0
-            state = vertical_remap!(state, scratch, model.domain.layer, model, state)
+            state, scratch = vertical_remap!(state, scratch, model.domain.layer, model, state)
         end
 #        (; mass_consvar_spec, uv_spec) = state
 #        mass_consvar_spec = dissipation.theta(mass_consvar_spec, mass_consvar_spec)
@@ -97,10 +97,10 @@ timeinfo(hours) = @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24))
 
 function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
     (; model, diags, quicklook) = info
-    @info "Starting simulation on $(model.mgr)."
+    (; courant, interval) = params
+    @info "Starting simulation on $(model.mgr) for a duration of $ndays days split into $(ndays*86400/interval) periods of $(interval/3600) hours."
     # scratch = scratch_remap(diags, model, state0)
     scratch = nothing
-    (; courant, interval) = params
     dt = max_time_step(info.sphere, info.model, info.diags, state0)
     dt = divisor(courant*dt, interval)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
@@ -112,12 +112,18 @@ function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
     for iter = 1:N
         t = interval*(iter-1)
         timeinfo(div(t, 3600))
-        quicklook(t, open(diags ; model, state), interp)
-        @time run_loop(timeloop, 1, interval, state, scratch)
+        quicklook(t, open(diags ; model, state, to_lonlat=interp), interp)
+        try
+            @time run_loop(timeloop, 1, interval, state, scratch)
+        catch e
+            @error "Caught a $(typeof(e)) !" t iter length(tape)
+            # return immediately with what we have been able to simulate
+            return tape
+        end
         push!(tape, deepcopy(state))
     end
     timeinfo(div(interval*N, 3600))
-    quicklook(interval*N, open(diags ; model, state), interp)    
+    quicklook(interval*N, open(diags ; model, state, to_lonlat=interp), interp)    
     return tape
 end
 
@@ -136,5 +142,6 @@ slice(x) = transpose(x[div(size(x,1), 2), :,:])
 fliplat(x) = reverse(x; dims=1)
 Linf(x) = maximum(abs,x)
 sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
-plotmap(x::Matrix, title="") = display(heatmap(fliplat(x); title))
+#plotmap(x::Matrix, title="") = display(heatmap(fliplat(x); title))
+plotmap(x::Matrix, title="") = display(heatmap(x; title))
 plotslice(x) = display(heatmap(slice(x)))
