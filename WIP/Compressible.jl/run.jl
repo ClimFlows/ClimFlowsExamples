@@ -13,7 +13,7 @@ end
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, remap_period, dissipation, diags) = info
     if mutating
-        solver = IVPSolver(scheme, time_step, u0, 0.0)
+        solver = IVPSolver(scheme, time_step, u0, 0)
     else
         solver = IVPSolver(scheme, time_step)
     end
@@ -81,7 +81,10 @@ function vertical_remap!(new, scratch, sph::SHTnsSphere, model, state)
 end
 
 function max_time_step(sphere::VoronoiSphere, model, diags, state)
-    return 180/2.8 # works for 1deg Voronoi mesh (FIXME)
+    dx = laplace_dx(sphere)
+    c = typeof(dx)(346.0) # speed of sound at T=300K
+#    return 180/2.8 # works for 1deg Voronoi mesh (FIXME)
+    return model.planet.radius*dx/c # time step for wave equation at Courant number=1
 end
 
 function max_time_step(sphere, model, diags, state)
@@ -95,13 +98,27 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 
 timeinfo(hours) = @info "t=$hours h ($(div(hours, 24)) days and $(rem(hours,24)) h)"
 
+function duration(days)
+    if days>=1
+        return "$(round(days ; sigdigits=2)) days"
+    else
+        hours = days*24
+        if hours>=1
+            return "$(round(hours ; sigdigits=2)) hours"
+        else
+            seconds = hours*3600
+            return "$(round(seconds ; sigdigits=2)) seconds"
+        end
+    end
+end
+
 function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
     (; model, diags, quicklook) = info
     (; courant, interval) = params
-    @info "Starting simulation on $(model.mgr) for a duration of $ndays days split into $(ndays*86400/interval) periods of $(interval/3600) hours."
+    @info "Starting simulation on $(model.mgr) for a duration of $(duration(ndays)) split into $(ndays*86400/interval) periods of $(interval/3600) hours."
     # scratch = scratch_remap(diags, model, state0)
     scratch = nothing
-    dt = max_time_step(info.sphere, info.model, info.diags, state0)
+    dt = max_time_step(info.sphere, info.model, info.diags, state0) :: choices.precision
     dt = divisor(courant*dt, interval)
     timeloop = TimeLoop(info, state0, dt, true) # mutating, non-allocating
     N = Int(ndays * 24 * 3600 / interval)
@@ -115,8 +132,9 @@ function simulation(params, info, state0; ndays=params.ndays, interp=nothing)
         quicklook(t, open(diags ; model, state, to_lonlat=interp), interp)
         try
             @time run_loop(timeloop, 1, interval, state, scratch)
-        catch e
-            @error "Caught a $(typeof(e)) !" t iter length(tape)
+        catch err
+            show(err)
+            @error "Caught a $(typeof(err)) !" t iter length(tape)
             # return immediately with what we have been able to simulate
             return tape
         end

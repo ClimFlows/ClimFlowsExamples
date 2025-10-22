@@ -2,7 +2,7 @@
 using InteractiveUtils
 
 using Pkg; Pkg.activate(@__DIR__);
-# push!(LOAD_PATH, Base.Filesystem.joinpath(@__DIR__, "packages")); unique!(LOAD_PATH)
+using Serialization
 
 @time_imports using NetCDF: ncread, ncwrite, nccreate, ncclose
 @time_imports using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
@@ -22,12 +22,13 @@ rmap(fun, x::Interpolations.Extrapolation) = x
 #============================  main program =========================#
 
 threadinfo()
-nthreads = 1 # Threads.nthreads()
-cpu, simd = PlainCPU(), VectorizedCPU(8)
-mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
+nthreads = Threads.nthreads()
+vlen(F) = div(32, sizeof(F))
+cpu, simd = PlainCPU(), VectorizedCPU(vlen(choices.precision))
 
-mgr = cpu
-# mgr = simd
+# mgr = (nthreads>1) ? MultiThread(simd, nthreads) : simd
+# mgr = cpu
+mgr = simd
 
 reader = DYNAMICO_reader(ncread, DYNAMICO_meshfile(choices.meshname))
 vsphere = VoronoiSphere(reader; prec=choices.precision)
@@ -49,7 +50,9 @@ topo_raw = let
     Phis.(vsphere.lon_i, vsphere.lat_i)
 end;
 
-Δs = [pi/90, pi/180, pi/360, pi/720, 0.0]
+# Δs = [pi/90, pi/180, pi/360, pi/720, 0.0]
+# Δs = [pi/90, pi/720, 0.0]
+Δs = [0.0]
 topos = [smoothed(vsphere, topo_raw, Δ) for Δ in Δs];
 
 for (Δ, topo) in zip(Δs, topos)
@@ -58,45 +61,51 @@ for (Δ, topo) in zip(Δs, topos)
 end
 
 function stable_time((choices, params), Δ, topo ; ndays=params.ndays, interval=params.interval)
-    params = rmap(Float64, params)
-    X = params.X # rescaling factor
+    plotmap(interp(topo), "Unscaled, smoothed surface geopotential")
+
+    params = rmap(choices.precision, params)
+    (; Xfactor, Zfactor) = params # rescaling factors
 
     @info "Model setup..." choices params Δ
-    Phis = Interp.linear_interpolator(topo/X, vsphere, vsphere_tree)
-    testcase = (; Phis, Uplanet = params.radius * params.Omega, params.testcase...)
+    Phis = Interp.linear_interpolator((Zfactor/Xfactor)*topo, vsphere, vsphere_tree)
+    testcase = (; Phis, radius=params.radius, Uplanet = params.radius * params.Omega, params.testcase...)
     params = (; params..., testcase)
 
-    loop_VHPE, case = setup(choices, params, vsphere, mgr, HPE)
+    loop_VHPE, case = setup(choices, params, vsphere, cpu, HPE)
     diags_VHPE, model_VHPE = loop_VHPE.diags, loop_VHPE.model
     state_VHPE =  CFHydrostatics.initial_HPE(case, model_VHPE)
 
-    @time tape = simulation(merge(choices, params, (; ndays, interval)), loop_VHPE, state_VHPE; interp);
-    stable_time_HPE = (length(tape)-1)*interval
-
-    display(heatmap(interp(topo)))
-    display(heatmap(interp(model_VHPE.Phis)))
-    @info "Simulation length" Δ stable_time_HPE
-
     newton = CFCompressible.NewtonSolve(choices.newton...)
-    model_VFCE = CFCompressible.FCE(model_VHPE, params.gravity, params.rhob, newton)
+    loop_VHPE_simd, _ = setup(choices, params, vsphere, simd, HPE)
+    model_VFCE = CFCompressible.FCE(loop_VHPE_simd.model, params.gravity, params.rhob, newton)
+
     state_VFCE = CFCompressible.NH_state.diagnose(model_VFCE, diags_VHPE, state_VHPE)
     diags_VFCE = CFCompressible.diagnostics(model_VFCE)
     scheme_VFCE = choices.TimeScheme(model_VFCE)
     loop_VFCE = TimeLoopInfo(vsphere, model_VFCE, scheme_VFCE, choices.remap_period, loop_VHPE.dissipation, diags_VFCE, choices.quicklook)
 
-    g = model_VFCE.planet.gravity
-    slope = maximum(normgrad(vsphere, topo))/g/model_VFCE.planet.radius
+    (; gravity, radius) = model_VFCE.planet
+    zsurf_i = model_VFCE.Phis/gravity
+    slope = maximum(normgrad(vsphere, zsurf_i))/radius
+    zsurf = interp(zsurf_i)
+    plotmap(zsurf, "Surface height used by FCE model - max slope $slope")
+    lineplot(zsurf[1:div(size(zsurf,1),3), div(size(zsurf,2),2)])
 
-    @showtime tape = simulation(merge(choices, params, (; ndays, interval)), loop_VFCE, state_VFCE; interp);
-    stable_time_FCE = (length(tape)-1)*interval
+    @showtime tape_FCE = simulation(merge(choices, params, (; ndays, interval)), loop_VFCE, state_VFCE; interp);
+    stable_time_FCE = (length(tape_FCE)-1)*interval
+    @info "FCE simulation length" radius maximum(zsurf) gravity slope Δ stable_time_FCE
 
-    display(heatmap(interp(model_VFCE.Phis)))
-    @info "Simulation length" g slope Δ stable_time_FCE
+    plotmap(interp(model_VHPE.Phis), "Surface geopotential used by HPE model")
+    tape_HPE = simulation(merge(choices, params, (; ndays, interval)), loop_VHPE, state_VHPE; interp);
+    stable_time_HPE = (length(tape_HPE)-1)*interval
+    @info "HPE simulation length" Δ stable_time_HPE
 
-    X, g, slope, Δ, stable_time_HPE, stable_time_FCE # result of do ... end block
+    return (; Xfactor, Zfactor, gravity, slope, Δ, stable_time_HPE, stable_time_FCE, params, scheme_VFCE, tape_FCE)
 end
 
 stable_times = map(zip(Δs, topos)) do (Δ, topo)
-    stable_time(experiment(choices, params), Δ, topo ; interval=3600, ndays=1/24)
+    stable_time(experiment(choices, params), choices.precision(Δ), topo)
 end
 @info "Model stability" stable_times
+
+serialize(joinpath(@__DIR__, "output_compressible_voronoi.jld"), stable_times[1])
