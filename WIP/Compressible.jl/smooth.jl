@@ -3,9 +3,10 @@ using CFDomains.Stencils
 using LoopManagers.ManagedLoops: @unroll
 
 function smoothed(sph, Phis, Δ ; n=3, verbose=0)
+    F = eltype(sph.Ai)
     Ai = sph.Ai/mean(sph.Ai)
-    h = Helmholtz(Δ^2/n, sph, similar(sph.le_de))
-    Phis_smooth = Phis
+    h = Helmholtz(F(Δ^2/n), sph, similar(sph.le_de))
+    Phis_smooth = F.(Phis)
     for _ in 1:n
         (Phis_smooth, _) = cg(h, Ai.*Phis_smooth ; verbose)
     end
