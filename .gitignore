@@ -1,5 +1,6 @@
 Manifest.toml
 *.mp4
 *.nc
+*.jld
 *-checkpoint.jl
 *.code-workspace

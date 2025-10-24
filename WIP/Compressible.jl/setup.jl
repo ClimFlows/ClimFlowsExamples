@@ -12,17 +12,18 @@ using InteractiveUtils
     using CFTimeSchemes: scratch_space, tendencies!, advance!
     using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2, ARK_TRBDF2
     using CFTimeSchemes: CFTimeSchemes, IVPSolver
-    using CFDomains: SigmaCoordinate, HyperDiffusion, void
-    using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
-
+    using CFDomains: VoronoiSphere, SigmaCoordinate, HyperDiffusion, laplace_dx, void
+    using SHTnsSpheres: SHTnsSphere
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
     using CFHydrostatics: CFHydrostatics, HPE, diagnostics
+    using CFCompressible
     using ClimFlowsTestCases: Jablonowski06, DCMIP
 
-    using UnicodePlots: heatmap, scatterplot
+    using UnicodePlots: heatmap, scatterplot, lineplot
 #    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
     using LinearAlgebra
+    using Statistics: mean
 end
 
 # fill some CFTimeSchemes entry points
@@ -38,6 +39,7 @@ end
 #   use our multi-thread manager when updating the model state
 @inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)
 @inline CFTimeSchemes.Update.manage(a::Array{<:Complex}, mgr::LoopManager) = no_simd(mgr)[a]
+@inline CFTimeSchemes.Update.manage(x, mgr::LoopManager) = mgr[x]
 
 # small functions that help manage nested named tuples
 rmap(fun, x) = fun(x)
@@ -68,7 +70,7 @@ end
 #============== model setup =============#
 
 function setup(choices, params, sph, mgr, Equation)
-    case = choices.TestCase(Float64; params.testcase...)
+    case = choices.TestCase(choices.precision; params.testcase...)
     params = merge(choices, case.params, params)
     hd_n, hd_nu = params.hyperdiff_n, params.hyperdiff_nu
     # stuff independent from initial condition

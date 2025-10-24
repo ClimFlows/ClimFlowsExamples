@@ -1,7 +1,7 @@
 @time_imports begin
     import ClimFlowsPlots.SpectralSphere as Plots
     using CFDomains.VerticalInterpolation: interpolate!
-    using CairoMakie: Makie, record
+    using CairoMakie: Makie, record, Observable
     using NetCDF
 end
 
@@ -10,7 +10,7 @@ function movie(model, diags, tape, var ; filename=joinpath(@__DIR__, "movie.mp4"
     diag(state) = var(open(diags; model, state))
     lons = Plots.bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
     lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
-    diag_obs = Makie.Observable(diag(tape[1]))
+    diag_obs = Observable(diag(tape[1]))
     fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
     record(fig, filename, eachindex(tape)) do i
         @info "$filename: frame $i"
@@ -29,7 +29,7 @@ var_ref(var) = function(session)
         [85000.0, 50000.0],
         false,
     )
-    return transpose(interpolated[:, :, 1])
+    return transpose(interpolated[:, :, 2])
 end
 
 function save(tape, filename = "SpectralHPE.nc"; vars...)
