@@ -26,9 +26,30 @@ includet("rrules.jl")
 
 includet("stencils.jl")
 
-function sum_grad2(f, grad, sph, app!)
-    app!(grad, Gradient(sph), f)
-    return sum(x->x^2, grad)
+function sum_op2(f, tmp, op, app!)
+    app!(tmp, op, f)
+    return sum(x->x^2, tmp)
+end
+
+function test_op(q, tmp, op)
+    @info "forward" sum_op2(q, tmp, op, apply!_internal)
+    @code_warntype sum_op2(q, tmp, op, apply!_internal)
+    
+    backend = DI.AutoMooncake(; config=nothing)
+    # prep_internal = DI.prepare_gradient(sum_op2, backend, q, Const(tmp), Const(op), Const(apply!_internal));
+    # grad_internal = DI.gradient(sum_op2, prep_internal, backend, q, Const(tmp), Const(op), Const(apply!_internal));
+    prep = DI.prepare_gradient(sum_op2, backend, q, Const(tmp), Const(op), Const(apply!));
+    grad = DI.gradient(sum_op2, prep, backend, q, Const(tmp), Const(op), Const(apply!));
+    # @assert grad ≈ grad_internal    
+
+    # run_internal() = DI.gradient(sum_op2, prep_internal, backend, q, Const(tmp), Const(op), Const(apply!_internal))
+    run() = DI.gradient(sum_op2, prep, backend, q, Const(tmp), Const(op), Const(apply!))
+    for _ in 1:10
+        @time run()
+        # @time run_internal()
+    end
+    display(@benchmark $run())
+    # display(@benchmark $run_internal())
 end
 
 # `choices` is for discrete parameters, while `params` is for continuous parameters (floats)
@@ -36,25 +57,21 @@ end
 
 choices = (
     precision = Float32,
-    meshname = DYNAMICO_meshfile("uni.2deg.mesh.nc"),
+    meshname = DYNAMICO_meshfile("uni.1deg.mesh.nc"),
 )
 
 reader = DYNAMICO_reader(ncread, choices.meshname)
 vsphere = VoronoiSphere(reader; prec=choices.precision)
 
+#=============== TRiSK ================#
+
+q = randn(choices.precision, length(vsphere.lon_e))
+tmp = similar(q)
+test_op(q, tmp, TRiSK(vsphere))
+
+#=============== Gradient ================#
+
 q = randn(choices.precision, length(vsphere.lon_i))
-gradq = similar(q, length(vsphere.lon_e)) # gradient is computed on edges
-
-@info "forward" sum_grad2(q, gradq, vsphere, apply!_internal)
-@code_warntype sum_grad2(q, gradq, vsphere, apply!_internal)
-# @descend sum_grad2(q, vsphere, apply!_internal)
-
-backend = DI.AutoMooncake(; config=nothing)
-prep = DI.prepare_gradient(sum_grad2, backend, q, Const(gradq), Const(vsphere), Const(apply!));
-grad = DI.gradient(sum_grad2, prep, backend, q, Const(gradq), Const(vsphere), Const(apply!));
-prep_internal = DI.prepare_gradient(sum_grad2, backend, q, Const(gradq), Const(vsphere), Const(apply!_internal));
-grad_internal = DI.gradient(sum_grad2, prep_internal, backend, q, Const(gradq), Const(vsphere), Const(apply!_internal));
-@assert grad ≈ grad_internal
-
-display(@benchmark DI.gradient(sum_grad2, prep_internal, backend, q, Const(gradq), Const(vsphere), Const(apply!_internal)))
-display(@benchmark DI.gradient(sum_grad2, prep, backend, q, Const(gradq), Const(vsphere), Const(apply!)))
+tmp = similar(q, length(vsphere.lon_e)) # gradient is computed on edges
+grad_op = Gradient(vsphere)
+test_op(q, tmp, grad_op)
