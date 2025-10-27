@@ -10,6 +10,7 @@ SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
 
 [compat]
 CFTimeSchemes = "0.3"
+CairoMakie = "0.11"
 ClimFlowsTestCases = "0.2"
 CookBooks = "0.2"
 MutatingOrNot = "0.1"
