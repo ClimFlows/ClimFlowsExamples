@@ -27,6 +27,15 @@ struct DivForm{Action} <: DiffStencil{1,1}
 end
 DivForm(action, sph) = DivForm(action, sph.primal_deg, sph.primal_edge, sph.primal_ne, sph.edge_left_right)
 
+struct TRiSK{Action, F} <: DiffStencil{1,1}
+    action::Action # how to combine op(input) with output
+    trisk_deg::Vector{Int32}
+    trisk::Matrix{Int32}
+    wee::Matrix{F}
+end
+TRiSK(sph) = TRiSK(ignore, sph)
+TRiSK(action, sph) = TRiSK(action, sph.trisk_deg, sph.trisk, sph.wee)
+
 apply!(output, stencil::DiffStencil{1,1}, input) = apply!_internal(output, stencil, input)
 
 @inline function apply!_internal(output, op::Gradient, input)
@@ -50,13 +59,25 @@ end
     return nothing
 end
 
+@inline function apply!_internal(output, op::TRiSK, input)
+    (; action) = op
+    for edge in eachindex(output)
+        deg = op.trisk_deg[edge]
+        @unroll deg in 9:11 begin
+            trsk = Stencils.TRiSK(op, edge, Val(deg))
+            output[edge] = action(output[edge], trsk(input))
+        end
+    end
+    return nothing
+end
+
 module StencilRules
 
 # codual = reverse codual = primal + rdata
 # fcodual = forward codual = primal + fdata
 
 using Mooncake: Mooncake, CoDual, NoTangent, NoFData, NoRData, zero_fcodual, primal
-using Main: apply!, apply!_internal, ignore, DiffStencil, Gradient, DivForm
+using Main: apply!, apply!_internal, ignore, DiffStencil, Gradient, DivForm, TRiSK
 
 Mooncake.tangent_type(::Type{<:DiffStencil}) = NoTangent
 
@@ -81,6 +102,7 @@ function apply!_rrule!!(foutput::CoVector{F}, op::CoStencil{1,1}, finput::CoVect
 end
 
 adjoint(op::Gradient{typeof(ignore)}) = DivForm(subfrom, op)
+adjoint(op::TRiSK{typeof(ignore)}) = TRiSK(subfrom, op)
 subfrom(x,y) = x-y
 
 end
