@@ -6,7 +6,7 @@ f2!_custom(x) = f2!(x)
 
 function loss(x, f!) 
     s = sum(x)
-    for _ in 1:3
+    for _ in 1:2
         f!(x)
         s += sum(x)
     end
@@ -15,20 +15,33 @@ end
 
 megabytes(x) = div(Base.summarysize(x), 1024*1024)
 function grad_loss(x, f!)
-    backend = AutoMooncake(; config=nothing)
-    prep = prepare_gradient(loss, backend, copy(x), DI.Constant(f!));
-    @info "grad_loss" typeof(prep) megabytes(prep)
-    # display(@benchmark gradient(loss, $prep, $backend, $(copy(x)), $(DI.Constant(f!))))
-    return gradient(loss, prep, backend, copy(x), DI.Constant(f!))
+    @info "grad_loss" f! typeof(x)
+    backend = DI.AutoMooncake()
+    prep = DI.prepare_gradient(loss, backend, x, DI.Constant(f!));
+    display(@benchmark DI.gradient(loss, $prep, $backend, $(copy(x)), $(DI.Constant(f!))))
+    return DI.gradient(loss, prep, backend, copy(x), DI.Constant(f!))
 end
 
-x = randn(10,10);
-@showtime g_custom = grad_loss(x, f2!_custom);
-@showtime g = grad_loss(x, f2!);
-@info "check" g ≈ g_custom
-
 fixed(x) = FixedSizeArray(copy(x))
-gradient(sum, AutoMooncake(), copy(x))
-gradient(sum, AutoMooncake(), fixed(x))
-gradient(loss, AutoMooncake(), fixed(x), DI.Constant(f2!))
-gradient(loss, AutoMooncake(), fixed(x), DI.Constant(f2!_custom))
+
+x = randn(10,10);
+g_manual = @. 1+cos(x)+cos(x)*cos(sin(x)) # (d/dx)(x+sin(x)+sin(sin(x))
+
+@info "=================================================================" 
+g = grad_loss(copy(x), f2!)
+@info "check" g ≈ g_manual
+
+@info "=================================================================" 
+g_custom = grad_loss(copy(x), f2!_custom)
+@info "check" g_custom ≈ g_manual
+
+@info "=================================================================" 
+g_fixed = grad_loss(fixed(x), f2!)
+@info "check" g_fixed ≈ g_manual
+
+@info "=================================================================" 
+g_custom_fixed = grad_loss(fixed(x), f2!_custom)
+@info "check" g_custom_fixed ≈ g_manual
+
+g_custom = DI.gradient(loss, DI.AutoMooncake(), copy(x), DI.Constant(f2!_custom))
+@info "check" g_custom ≈ g_manual

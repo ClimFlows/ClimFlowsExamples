@@ -20,7 +20,7 @@ includet("stubs.jl")
 includet("fixed_size.jl")
 includet("rrules.jl")
 
-# include("check_fixed_size.jl")
+include("check_fixed_size.jl")
 
 #=============================================================================#
 

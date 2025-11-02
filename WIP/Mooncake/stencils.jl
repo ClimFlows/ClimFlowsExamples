@@ -84,20 +84,21 @@ Mooncake.tangent_type(::Type{<:DiffStencil}) = NoTangent
 const CoVector{F} = CoDual{<:AbstractVector{F}, <:AbstractVector{F}}
 const CoNumber{F} = CoDual{F,NoFData}
 const CoStencil{A,B} = CoDual{<:DiffStencil{A,B}, NoFData}
+CoFunction(f) = CoDual{typeof(f), NoFData}
 
 Mooncake.@is_primitive Mooncake.DefaultCtx Tuple{typeof(apply!), Vararg}
-# Mooncake.@is_primitive Mooncake.DefaultCtx Tuple{typeof(apply!), Any, DiffStencil{1,1}, Any}
-Mooncake.rrule!!(::CoDual{typeof(apply!),NoFData}, fx::Vararg) = apply!_rrule!!(fx...)
+Mooncake.rrule!!(::CoFunction(apply!), fx::Vararg) = apply!_rrule!!(fx...)
 
 function apply!_rrule!!(foutput::CoVector{F}, op::CoStencil{1,1}, finput::CoVector{F}) where F
-    stencil = primal(op)
-    dout, din, adj = foutput.dx, finput.dx, adjoint(stencil) # captured by pullback closure
-    apply!_internal(primal(foutput), stencil, primal(finput))
-    
+    output, stencil, input = primal(foutput), primal(op), primal(finput)
+    output_ = copy(output) # to undo mutation during backward pass    
+    dout, din, adj = tangent(foutput), tangent(finput), adjoint(stencil)
     function apply!_pullback!!(::NoRData)
+        @. output = output_ # undo mutation
         apply!_internal(din, adj, dout)
         return NoRData(), NoRData(), NoRData(), NoRData() # rdata for (apply!, output, op, input)
     end
+    apply!_internal(output, stencil, input)
     return zero_fcodual(nothing), apply!_pullback!!
 end
 
