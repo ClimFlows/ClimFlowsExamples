@@ -6,3 +6,8 @@ FixedSizeArrays = "3821ddf9-e5b5-40d5-8e25-6813ab96b5e2"
 ManagedLoops = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
+
+[compat]
+CFDomains = "0.3.10"
+ClimFlowsData = "0.2"
+ManagedLoops = "0.1"
