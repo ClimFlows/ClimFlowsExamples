@@ -1,0 +1,5 @@
+[deps]
+FastGaussQuadrature = "442a2c76-b920-505d-bb47-c5924d526838"
+LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
+Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
+Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
