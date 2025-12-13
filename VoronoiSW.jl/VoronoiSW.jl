@@ -5,6 +5,7 @@
 
 # ## Preamble
 using Pkg; Pkg.activate(@__DIR__)
+using Revise
 using InteractiveUtils
 
 @time_imports begin
@@ -15,7 +16,7 @@ using InteractiveUtils
     import CFShallowWaters
     import ClimFlowsTestCases as CFTestCases
     # heavy dependencies
-    using ClimFlowsData: DYNAMICO_reader
+    using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
     import ClimFlowsPlots: VoronoiSphere as VSPlots
     using CairoMakie
     using NetCDF: ncread
@@ -114,7 +115,7 @@ diagnose_pv(diags, state) = CFDomains.primal_from_dual(max.(0, open(diags; state
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-14
 Float = Float32
 periods, hours_per_period = 60, Float(4)
-sphere = VoronoiSphere(DYNAMICO_reader(ncread, meshname) ; prec=Float)
+sphere = VoronoiSphere(DYNAMICO_reader(ncread, DYNAMICO_meshfile(meshname)) ; prec=Float)
 @info sphere
 
 model, diags, state0, solver, nstep, dt = setup_RSW(sphere; nu_gradrot, courant = 1.5, interval=3600*hours_per_period);
@@ -124,8 +125,8 @@ solver! = solver(true)
 
 pv = CairoMakie.Observable(diagnose_pv(diags, state0))
 
-fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
-# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
+# fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
+fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
 # fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
 
 let future = deepcopy(state0)
@@ -136,9 +137,11 @@ let future = deepcopy(state0)
     end
 end
 
+#=
 @info "Pure time integration without the overhead of the animation:"
 @time let future = deepcopy(state0)
     for _ in 1:periods
         advance!(future, solver!, future, zero(Float), nstep)
     end
 end ;
+=#
