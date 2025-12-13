@@ -8,7 +8,7 @@ using Cthulhu
     import DifferentiationInterface as DI
     using DifferentiationInterface: Constant as Const
     import Mooncake
-    import Enzyme
+    import ForwardDiff
         
     using FixedSizeArrays
     using LinearAlgebra: dot, norm
@@ -34,19 +34,17 @@ choices = (
 reader = DYNAMICO_reader(ncread, choices.meshname)
 vsphere = VoronoiSphere(reader; prec=choices.precision)
 
-#=============== Gradient ================#
-
 q = randn(choices.precision, length(vsphere.lon_i))
-tmp = similar(q, length(vsphere.lon_e)) # gradient is computed on edges
-test_op(q, tmp, Ops.Gradient(vsphere))
+ucov = randn(choices.precision, length(vsphere.lon_e))
+tmp_i = similar(q)
+tmp_e = similar(q, length(vsphere.lon_e)) # gradient is computed on edges
+test_op(q, tmp_e, Ops.Gradient(vsphere))
+test_op(ucov, tmp_e, Ops.TRiSK(vsphere))
+test_op(ucov, tmp_i, Ops.Divergence(vsphere))
+
+test_op(q, nothing, Ops.ToScalar(vsphere))
 
 exit()
-
-#=============== TRiSK ================#
-
-q = randn(choices.precision, length(vsphere.lon_e))
-tmp = similar(q)
-test_op(q, tmp, Ops.TRiSK(vsphere))
 
 #=============================================================================#
 
@@ -55,3 +53,4 @@ includet("fixed_size.jl")
 includet("rrules.jl")
 
 include("check_fixed_size.jl")
+
