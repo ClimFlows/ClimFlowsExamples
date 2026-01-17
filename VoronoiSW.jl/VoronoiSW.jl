@@ -4,7 +4,8 @@
 # ![](VoronoiSW_3D.mp4)
 
 # ## Preamble
-using Pkg; Pkg.activate(@__DIR__)
+using Pkg; Pkg.activate(@__DIR__); Pkg.status()
+using Revise
 using InteractiveUtils
 
 @time_imports begin
@@ -15,7 +16,7 @@ using InteractiveUtils
     import CFShallowWaters
     import ClimFlowsTestCases as CFTestCases
     # heavy dependencies
-    using ClimFlowsData: DYNAMICO_reader
+    using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
     import ClimFlowsPlots: VoronoiSphere as VSPlots
     using CairoMakie
     using NetCDF: ncread
@@ -31,7 +32,7 @@ struct MySolver{DynSolver, Dissip, F, S}
 end
 
 function MySolver(dyn_scheme, dissip, nstep, dt ; u0=nothing, mutating=false)
-    solver = CFTimeSchemes.IVPSolver(dyn_scheme, dt ; u0, mutating)
+    solver = CFTimeSchemes.IVPSolver(dyn_scheme, dt, u0, zero(dt))
     scratch = CFDomains.scratch_space(dissip, u0.ucov)
     MySolver(solver, dissip, nstep, dt*nstep, scratch)
 end
@@ -114,7 +115,7 @@ diagnose_pv(diags, state) = CFDomains.primal_from_dual(max.(0, open(diags; state
 meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-14
 Float = Float32
 periods, hours_per_period = 60, Float(4)
-sphere = VoronoiSphere(DYNAMICO_reader(ncread, meshname) ; prec=Float)
+sphere = VoronoiSphere(DYNAMICO_reader(ncread, DYNAMICO_meshfile(meshname)) ; prec=Float)
 @info sphere
 
 model, diags, state0, solver, nstep, dt = setup_RSW(sphere; nu_gradrot, courant = 1.5, interval=3600*hours_per_period);
@@ -136,9 +137,11 @@ let future = deepcopy(state0)
     end
 end
 
+#=
 @info "Pure time integration without the overhead of the animation:"
-@time let future = deepcopy(state0)
-    for _ in 1:periods
+@profview let future = deepcopy(state0)
+    for _ in 1:10 # periods
         advance!(future, solver!, future, zero(Float), nstep)
     end
 end ;
+=#
