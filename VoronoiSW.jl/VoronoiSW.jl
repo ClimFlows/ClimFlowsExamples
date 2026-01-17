@@ -125,8 +125,8 @@ solver! = solver(true)
 
 pv = CairoMakie.Observable(diagnose_pv(diags, state0))
 
-# fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
-fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
+fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
+# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
 # fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
 
 let future = deepcopy(state0)
