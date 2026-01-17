@@ -4,7 +4,7 @@
 # ![](VoronoiSW_3D.mp4)
 
 # ## Preamble
-using Pkg; Pkg.activate(@__DIR__)
+using Pkg; Pkg.activate(@__DIR__); Pkg.status()
 using Revise
 using InteractiveUtils
 
@@ -32,7 +32,7 @@ struct MySolver{DynSolver, Dissip, F, S}
 end
 
 function MySolver(dyn_scheme, dissip, nstep, dt ; u0=nothing, mutating=false)
-    solver = CFTimeSchemes.IVPSolver(dyn_scheme, dt ; u0, mutating)
+    solver = CFTimeSchemes.IVPSolver(dyn_scheme, dt, u0, zero(dt))
     scratch = CFDomains.scratch_space(dissip, u0.ucov)
     MySolver(solver, dissip, nstep, dt*nstep, scratch)
 end
@@ -139,8 +139,8 @@ end
 
 #=
 @info "Pure time integration without the overhead of the animation:"
-@time let future = deepcopy(state0)
-    for _ in 1:periods
+@profview let future = deepcopy(state0)
+    for _ in 1:10 # periods
         advance!(future, solver!, future, zero(Float), nstep)
     end
 end ;
