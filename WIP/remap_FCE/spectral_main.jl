@@ -57,7 +57,8 @@ tape = simulation(merge(choices, params, (;ndays=2)), loop, params.time_step, st
 # tape_HPE = simulation(merge(choices, params), loop_HPE, params.time_step, state.HPE);
 
 final_state = deepcopy(tape[end]);
-remapped_HPE, scratch = vertical_remap_HPE(model.HPE, final_state.HPE, void);
-remapped_FCE, _ = vertical_remap_FCE(model.FCE, final_state.FCE, void);
+#remapped_HPE, scratch = vertical_remap_HPE(model.HPE, final_state.HPE, void);
+remapped_FCE, tmp = vertical_remap_FCE(model.FCE, final_state.FCE, void);
+remapped_FCE, tmp = vertical_remap_FCE(model.FCE, final_state.FCE, tmp);
 
 # @showtime vertical_remap_HPE(model.HPE, state.HPE, scratch);
