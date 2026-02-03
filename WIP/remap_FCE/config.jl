@@ -29,7 +29,7 @@ params = (testcase=(; Phi_m=(250*9.81)), # xi_m=0.1,
           courant=2.5,   # ignored at this point
           time_step=900.0, 
           interval=3600*12,
-          ndays=20,
+          ndays=2,
           # for tests and benchmarking
           dt=1000,
           Phis=0,

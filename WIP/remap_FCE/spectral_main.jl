@@ -57,8 +57,13 @@ tape = simulation(merge(choices, params, (;ndays=2)), loop, params.time_step, st
 # tape_HPE = simulation(merge(choices, params), loop_HPE, params.time_step, state.HPE);
 
 final_state = deepcopy(tape[end]);
-#remapped_HPE, scratch = vertical_remap_HPE(model.HPE, final_state.HPE, void);
-remapped_FCE, tmp = vertical_remap_FCE(model.FCE, final_state.FCE, void);
-remapped_FCE, tmp = vertical_remap_FCE(model.FCE, final_state.FCE, tmp);
+remapped_HPE, tmp_HPE = vertical_remap_HPE(model.HPE, final_state.HPE, void);
+remapped_FCE, tmp_FCE = vertical_remap_FCE(model.FCE, final_state.FCE, void);
 
 # @showtime vertical_remap_HPE(model.HPE, state.HPE, scratch);
+reshp(x) = reshape(x, 64, 128, size(x,2))
+slice_Eq(x) = collect((x[div(size(x,1),2),:,:])')
+
+(; gravity, radius) = model.FCE.planet
+m_HPE = slice_Eq(tmp_HPE.masses_spat.air)*radius^-2 # includes gravity
+m_FCE = slice_Eq(tmp_FCE.spat.mass)*radius^-2

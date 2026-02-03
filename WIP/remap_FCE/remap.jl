@@ -55,8 +55,22 @@ end
 #======================== FCE ======================#
 
 function vertical_remap_FCE(model, state, tmp)
+    # steps:
+    #   1 - spectral => spatial
+    #   2 - covariant momentum, mass => horizontal momentum, weight
+    #   3 - geopot => p_NH
+    #   4 - remap
+    #   5 - p_NH => Phi, ∇Phi
+    #   6 - horizontal momentum, weight => covariant momentum, mass
+    #   7 - spatial => spectral
+
     layout = data_layout(model.domain)
+    flat(x) = flatten(x, layout)  # (nx, ny, nz) => (nx * ny, nz)
+    flat(x::Union{Tuple,NamedTuple}) = map(flat, x)
+    flat(x...) = map(flat,x)
+
     sph = model.domain.layer
+    #   1 - spectral => spatial
     mass_spat = SHTnsSpheres.synthesis_scalar!(tmp.spat.mass, state.mass_air_spec, sph)
     massq_spat = SHTnsSpheres.synthesis_scalar!(tmp.spat.massq, state.mass_consvar_spec, sph)
     uv_spat = SHTnsSpheres.synthesis_vector!(tmp.spat.uv, state.uv_spec, sph)
@@ -69,7 +83,9 @@ function vertical_remap_FCE(model, state, tmp)
     p_NH = similar!(tmp.p_NH, massq_spat)
 
     mgr, metric = model.mgr, model.planet.gravity*model.planet.radius^-2
+    #   2 - covariant momentum, mass => horizontal momentum, weight
     cov_to_horiz!(uv_spat, mass_spat, q_spat, mgr, metric, gradPhi_cov, W_spat, massq_spat)
+    #   3 - geopot => p_NH
     NH_pressure!(p_hydro, p_NH, model.mgr, model.gas, model.vcoord.ptop, mass_spat, q_spat, Phi_spat)
 
     now = (
@@ -81,21 +97,26 @@ function vertical_remap_FCE(model, state, tmp)
         p_NH              # non-hydrostatic pressure
     )
 
+    #   4 - remap NB : inputs (nx, ny, nz) => outputs (nx * ny, nz)
     new, scratch_remapped =
         remap_FCE!(tmp.new, tmp.remapped, model.mgr, model.vcoord, layout, now)
 
-    reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(x, 2))
-    mass_spat .= reshp(new.mass)*model.planet.radius^2
-    q_spat .= reshp(new.q)
-    W_spat .= reshp(new.W)
+    #   5 - p_NH => Phi, ∇Phi
+    NH_geopotential!(flat(Phi_spat, p_hydro), mgr, model.gas, model.vcoord.ptop, new.mass, new.p_NH, new.q)
+    Phi_spec = SHTnsSpheres.analysis_scalar!(state.Phi_spec, Phi_spat, sph)
+    SHTnsSpheres.synthesis_spheroidal!(gradPhi_cov, Phi_spec, sph)
+
+    #   6 - horizontal momentum, weight => covariant momentum, mass
+    horiz_to_cov!(flat(mass_spat, massq_spat, W_spat, uv_spat...), inv(metric), new.mass, new.ux, new.uy, new.q, new.W, flat(gradPhi_cov))
+
+    #   7 - spatial => spectral
     mass_air_spec = SHTnsSpheres.analysis_scalar!(state.mass_air_spec, mass_spat, sph)
     mass_consvar_spec = SHTnsSpheres.analysis_scalar!(state.mass_consvar_spec, massq_spat, sph)
     W_spec = SHTnsSpheres.analysis_scalar!(state.W_spec, W_spat, sph)
-    ucolat, ulon = reshp(new.ux), reshp(new.uy)
-    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, (;ucolat, ulon), sph)
+    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, uv_spat, sph)
 
     spat = (; mass=mass_spat, massq=massq_spat, q=q_spat, uv=uv_spat, Phi=Phi_spat, W=W_spat, gradPhi_cov)
-    return (; mass_air_spec, mass_consvar_spec, uv_spec, W_spec) ,
+    return (; mass_air_spec, mass_consvar_spec, uv_spec, Phi_spec, W_spec),
         (; spat, p_hydro, p_NH, new, remapped=scratch_remapped)
 end
 
@@ -170,8 +191,9 @@ function remap_FCE!(new, tmp, mgr, vcoord, layout, now, schemes=(scalar=vanleer,
     w = similar!(tmp.w, W)
     slopeW = similar!(tmp.slopeW, W)
     fluxW = similar!(tmp.fluxW, flux_dual)
+    # new_massq = remap_density!(mgr, scheme_mq, new.massq, #==# fluxq, slope, q, #==# massq, mass, flux)
     new_W = remap_density!(mgr, density, new.W, #==# fluxW, slopeW, w, #==# W, mass_dual, flux_dual)
-    @info "remap_FCE!" size(new_W) size(fluxW) size(slopeW) size(W) size(mass_dual) size(flux_dual)
+    @info "remap_FCE!" size(new_W) size(fluxW) size(slopeW) size(W) size(mass_dual) size(flux_dual) maximum(abs, flux_dual) maximum(mass_dual) maximum(abs, W) maximum(abs, W-new_W)
     new_mass = update_mass!(mgr, new.mass, #==# new_mass)
     # return
     tmp = (; flux, new_mass, fluxq, slope, mass_dual, flux_dual, fluxW, slopeW, w)
@@ -181,7 +203,7 @@ end
 function mass_flux_dual!(mgr, layout, mass_dual_, flux_dual_, mass, flux)
     mass_dual = similar!(mass_dual_, flux)
     flux_dual = similar!(flux_dual_, flux, size(flux,1), size(flux,2)+1)
-    @info "mass_flux_dual!" size(mass) size(flux) size(mass_dual) size(flux_dual)
+    # @info "mass_flux_dual!" size(mass) size(flux) size(mass_dual) size(flux_dual)
     for i in axes(flux_dual,1)
         flux_dual[i,1] = 0
         flux_dual[i, end] = 0
@@ -195,6 +217,55 @@ function mass_flux_dual!(mgr, layout, mass_dual_, flux_dual_, mass, flux)
         flux_dual[i,k+1] = (flux[i,k]+flux[i,k+1])/2
     end
     return mass_dual, flux_dual
+end
+
+# p_NH => geopot
+function NH_geopotential!((Phi, p_hydro), mgr, gas, ptop, mass, p_NH, consvar)
+    volume = gas(:p, :consvar).specific_volume
+    nz = size(p_NH, 3)
+    @with mgr let irange=axes(p_NH, 1)
+        # mass is per unit area, includes gravity => same unit as pressure, as in HPE
+        @vec for i in irange
+            p_hydro[i, nz] = ptop + mass[i, nz] / 2
+        end
+        for k in nz-1:-1:1
+            @vec for i in irange
+                p_hydro[i, k] = p_hydro[i, k+1] + (mass[i, k] + mass[i, k+1])/2
+            end
+        end
+        # Phi[:,1] is already set
+        for k in axes(mass,2)
+            @vec for i in irange
+                vol = volume(p_hydro[i,k] + p_NH[i,k], consvar[i,k])
+                Phi[i,k+1] = Phi[i,k] + mass[i,k]*vol
+            end
+        end
+    end
+    return nothing
+end
+
+# horizontal momentum, weight => covariant momentum, mass
+function horiz_to_cov!((mass, massq, W, ux, uy), metric, new_mass, new_ux, new_uy, new_q, new_W, (Phi_x, Phi_y))
+    @with mgr let (irange, krange) = axes(W)
+        for i in irange, k in krange
+            W[i,k] = new_W[i,k]
+        end
+    end
+    @with mgr let (irange, krange) = axes(mass)
+        for k in krange
+            for i in irange 
+                mass[i,k] = metric*new_mass[i,k]
+                massq[i,k] = mass[i,k] * new_q[i,k]
+            end 
+            for (ui, Phi_i) in ((ux, Phi_x), (uy, Phi_y))
+                for i in irange
+                    ui[i, k] += (Phi_i[i, k] * W[i, k] +
+                                Phi_i[i, k + 1] * W[i, k + 1]) /
+                               (2 * mass[i, k])
+                end
+            end # (ux,uy)
+        end # k
+    end # let
 end
 
 @inline crop(ax::Base.OneTo) = Base.OneTo(ax.stop-1)
