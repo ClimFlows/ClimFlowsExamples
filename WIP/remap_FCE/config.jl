@@ -28,8 +28,8 @@ params = (testcase=(; Phi_m=(250*9.81)), # xi_m=0.1,
           hyperdiff_nu=0, # 0.002,
           courant=2.5,   # ignored at this point
           time_step=900.0, 
-          interval=3600*12,
-          ndays=2,
+          interval=3600*24,
+          ndays=50,
           # for tests and benchmarking
           dt=1000,
           Phis=0,
@@ -43,7 +43,7 @@ end
 
 function exp_DCMIP21(choices, params; Xfactor=params.Xfactor)
     return override(choices; TestCase=DCMIP{21}, quicklook),
-           override(params; ptop=3281.8, Omega=0, gravity=(params.gravity/Xfactor), ndays=15)
+           override(params; ptop=3281.8, Omega=0, gravity=(params.gravity/Xfactor))
 end
 
 function exp_DCMIP21_custom(choices, params; Xfactor=params.Xfactor)

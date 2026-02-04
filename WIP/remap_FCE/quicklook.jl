@@ -28,3 +28,5 @@ sym(x, op) = Linf(op(x,fliplat(x)))/Linf(x)
 plotmap(x::Matrix, title="") = display(heatmap(x; title))
 plotslice(x) = display(heatmap(slice(x)))
 
+reshp(x) = reshape(x, sph.nlon, sph.nlat, size(x,2))
+slice_Eq(x) = collect((x[div(size(x,1),2),:,:])')

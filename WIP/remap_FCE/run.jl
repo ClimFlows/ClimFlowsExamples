@@ -29,6 +29,7 @@ function simulation(params, info, time_step, state0; ndays=params.ndays, interp=
     tape = [state0]
     state = deepcopy(state0)
     scratch = scratch_space(scheme, state, zero(interval))
+    tmp_remap = vertical_remap!(state, model, void)
 
     for iter = 1:N
         t = interval*(iter-1)
@@ -37,6 +38,7 @@ function simulation(params, info, time_step, state0; ndays=params.ndays, interp=
         try
             @time for j=1:div(interval, time_step)
                 advance!(state, scheme, state, t+(j-1)*time_step, time_step, scratch)
+                vertical_remap!(state, model, tmp_remap)
                 # run_loop(timeloop, 1, interval, state, scratch)
             end
         catch err
