@@ -23,6 +23,7 @@ using InteractiveUtils
     using UnicodePlots: heatmap, scatterplot, lineplot
 #    using LinearAlgebra
     using Statistics: mean
+    using Base.Filesystem: joinpath
 end
 
 # fill some CFTimeSchemes entry points

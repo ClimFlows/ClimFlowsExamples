@@ -1,16 +1,23 @@
-function quicklook(t, model, diags, state)
+function quicklook_JW06(t, model, diags, state)
     if model isa TwinModels
-        quicklook(t, model.HPE, diags.HPE, state.HPE)
-        quicklook(t, model.FCE, diags.FCE, state.FCE)
+        quicklook_JW06(t, model.HPE, diags.HPE, state.HPE)
+        quicklook_JW06(t, model.FCE, diags.FCE, state.FCE)
     else
-        lev = 20
+        session = open(diags; model, state, to_lonlat=identity)
+        plot_lev("$(short_name(model)) at $(timeinfo(t/3600))", "ulat", -session.uv.ucolat, 10)
+        plot_lev("$(short_name(model)) at $(timeinfo(t/3600))", "T", session.temperature, 10)
+    end
+end
+
+function quicklook_DCMIP21(t, model, diags, state)
+    if model isa TwinModels
+        quicklook_DCMIP21(t, model.HPE, diags.HPE, state.HPE)
+        quicklook_DCMIP21(t, model.FCE, diags.FCE, state.FCE)
+    else
         session = open(diags; model, state, to_lonlat=identity)
         plot_Teq("$(short_name(model)) at $(timeinfo(t/3600))", session)
     end
 end
-
-short_name(::HPE) = "HPE"
-short_name(::FCE) = "FCE"
 
 function plot_Teq(name, session)
     T = session.temperature
@@ -19,7 +26,13 @@ function plot_Teq(name, session)
     plotmap(collect(T'), "$name : T-<T> at the Equator")
 end
 
-# for quicklooks
+function plot_lev(name, varname, T, level)
+    plotmap(fliplat(T[:,:,level]), "$name : $varname at model level $level")
+end
+
+short_name(::HPE) = "HPE"
+short_name(::FCE) = "FCE"
+
 slice(x) = transpose(x[div(size(x,1), 2), :,:])
 fliplat(x) = reverse(x; dims=1)
 Linf(x) = maximum(abs,x)

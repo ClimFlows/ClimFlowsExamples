@@ -9,18 +9,13 @@ includet("quicklook.jl")
 includet("remap.jl")
 include("config.jl");
 
-# rmap(fun, x) = fun(x)
-# rmap(fun, x::Union{Tuple, NamedTuple}) = map(y->rmap(fun,y), x)
-
-# synth(x) = synth(x, eltype(x))
-# synth(x, ::Type) = x
-# synth(x, ::Type{<:Complex}) = synthesis_scalar!(void, x, sph)
-
-# to_deg(rad) = (180/pi)*rad
-
-# Ldiff(x,y) = round(Linf(x-y)/max(Linf(x),Linf(y)); sigdigits=2)
-
 #============================  main program =========================#
+
+function main(model, diags, state)
+    scheme=choices.TimeScheme(model)
+    loop = TimeLoopInfo(sph, model, scheme, choices.remap_period, nothing, diags, choices.quicklook)
+    return simulation(merge(choices, params), loop, params.time_step, state);
+end
 
 threadinfo()
 nthreads = 1 # Threads.nthreads()
@@ -39,7 +34,11 @@ params = (testcase=params_testcase, params...)
 @info sph
 
 model, state, diags = setup(choices, params, sph, mgr)
-scheme = choices.TimeScheme(model)
-loop = TimeLoopInfo(sph, model, scheme, choices.remap_period, nothing, diags, choices.quicklook)
+
+tape = main(model, diags, state)
+# tape = main(model.FCE, diags.FCE, state.FCE)
+# tape = main(model.HPE, diags.HPE, state.HPE);
+
 # @profview simulation(merge(choices, params, (;ndays=1/8)), loop, params.time_step, state);
-tape = simulation(merge(choices, params), loop, params.time_step, state);
+
+serialize(joinpath(@__DIR__, "tape.jld"), (; tape, choices, params, mgr))
