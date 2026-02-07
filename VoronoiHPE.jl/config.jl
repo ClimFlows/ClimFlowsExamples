@@ -10,8 +10,8 @@ choices = (
     precision = Float32,
     # numerics
     meshname = DYNAMICO_meshfile("uni.2deg.mesh.nc"),
-    coordinate = SigmaCoordinate, # NCARL30,
-    nz = 32,
+    coordinate = NCARL30, # SigmaCoordinate 
+    nz = 30,
     nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
