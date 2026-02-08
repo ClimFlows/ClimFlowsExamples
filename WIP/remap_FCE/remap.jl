@@ -1,6 +1,6 @@
 using CFHydrostatics.RemapHPE: vanleer, flatten, remap_density!, remap_scalar!, update_mass!
 using CFDomains: mass_coordinate, data_layout
-using CFTransport: remap_fluxes!
+using CFTransport: remap_fluxes!, mass_flux_dual!
 using MutatingOrNot: similar!
 using ManagedLoops: @with, @vec
 
@@ -11,6 +11,8 @@ function vertical_remap!(state, model::TwinModels, tmp)
     tmp_FCE = vertical_remap!(state.FCE, model.FCE, tmp.FCE)
     return (HPE=tmp_HPE, FCE=tmp_FCE) # == tmp
 end
+
+vertical_remap!(state, model::FCE, tmp) = CFCompressible.vertical_remap!(state, model, tmp)
 
 #========================= HPE ==========================#
 
@@ -60,6 +62,8 @@ function remap_HPE!(mgr, vcoord, layout, #==# new, #==# scratch, #==# now, schem
 end
 
 #======================== FCE ======================#
+
+#= moved to CFCompressible.RemapSpectral
 
 function vertical_remap!(state, model::FCE, tmp)
     # steps:
@@ -126,6 +130,9 @@ function vertical_remap!(state, model::FCE, tmp)
     return (; spat, p_hydro, p_NH, new, remapped=scratch_remapped) # == tmp
 end
 
+=#
+
+#= moved to CFCompressible.remap_collocated
 function cov_to_horiz!(uv, mass, q, mgr, metric, gradPhi, W, massq)
     (; ucolat, ulon) = uv
     Phi_colat, Phi_lon = gradPhi
@@ -193,7 +200,8 @@ function remap_FCE!(new, tmp, mgr, vcoord, layout, now, schemes=(scalar=vanleer,
     new_ux = remap_scalar!(mgr, momentum, new.ux, #==# fluxq, slope, #==# ux, mass, flux)
     new_uy = remap_scalar!(mgr, momentum, new.uy, #==# fluxq, slope, #==# uy, mass, flux)
     # densities
-    mass_dual, flux_dual = mass_flux_dual!(mgr, flatten(layout), tmp.mass_dual, tmp.flux_dual, mass, flux)
+    mass_dual, flux_dual = mass_flux_dual!(tmp.mass_dual, tmp.flux_dual, mgr, flatten(layout), mass, flux)
+#    mass_dual, flux_dual = mass_flux_dual!(mgr, flatten(layout), tmp.mass_dual, tmp.flux_dual, mass, flux)
     w = similar!(tmp.w, W)
     slopeW = similar!(tmp.slopeW, W)
     fluxW = similar!(tmp.fluxW, flux_dual)
@@ -203,24 +211,6 @@ function remap_FCE!(new, tmp, mgr, vcoord, layout, now, schemes=(scalar=vanleer,
     # return
     tmp = (; flux, new_mass, fluxq, slope, mass_dual, flux_dual, fluxW, slopeW, w)
     return (mass=new_mass, W=new_W, q=new_q, ux=new_ux, uy=new_uy, p_NH=new_p_NH), tmp
-end
-
-function mass_flux_dual!(mgr, layout, mass_dual_, flux_dual_, mass, flux)
-    mass_dual = similar!(mass_dual_, flux)
-    flux_dual = similar!(flux_dual_, flux, size(flux,1), size(flux,2)+1)
-    for i in axes(flux_dual,1)
-        flux_dual[i,1] = 0
-        flux_dual[i, end] = 0
-        mass_dual[i,1] = mass[i,1]/2
-        mass_dual[i,end] = mass[i,end]/2
-    end
-    for i in axes(mass_dual,1), k in crop(axes(mass,2))
-        mass_dual[i,k+1] = (mass[i,k]+mass[i,k+1])/2
-    end
-    for i in axes(flux_dual,1), k in axes(mass,2)
-        flux_dual[i,k+1] = (flux[i,k]+flux[i,k+1])/2
-    end
-    return mass_dual, flux_dual
 end
 
 # p_NH => geopot
@@ -271,5 +261,28 @@ function horiz_to_cov!((mass, massq, W, ux, uy), metric, new_mass, new_ux, new_u
         end # k
     end # let
 end
+=#
+
+#= Moved to CFTransport 
+
+function mass_flux_dual!(mgr, layout, mass_dual_, flux_dual_, mass, flux)
+    mass_dual = similar!(mass_dual_, flux)
+    flux_dual = similar!(flux_dual_, flux, size(flux,1), size(flux,2)+1)
+    for i in axes(flux_dual,1)
+        flux_dual[i,1] = 0
+        flux_dual[i, end] = 0
+        mass_dual[i,1] = mass[i,1]/2
+        mass_dual[i,end] = mass[i,end]/2
+    end
+    for i in axes(mass_dual,1), k in crop(axes(mass,2))
+        mass_dual[i,k+1] = (mass[i,k]+mass[i,k+1])/2
+    end
+    for i in axes(flux_dual,1), k in axes(mass,2)
+        flux_dual[i,k+1] = (flux[i,k]+flux[i,k+1])/2
+    end
+    return mass_dual, flux_dual
+end
 
 @inline crop(ax::Base.OneTo) = Base.OneTo(ax.stop-1)
+
+=#

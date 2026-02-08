@@ -2,7 +2,7 @@
 
 julia_version = "1.10.10"
 manifest_format = "2.0"
-project_hash = "c09e1b5615ce119d99ed6412a84501e58646d66d"
+project_hash = "9bd5528ecf07acf1d147a4bcb993d7427d0b3c2c"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -89,7 +89,7 @@ uuid = "435ea534-530f-4103-a4e2-07b06daf33cf"
 version = "0.0.3"
 
 [[deps.CFCompressible]]
-deps = ["CFBatchSolvers", "CFBoxes", "CFDiffusionSchemes", "CFDomains", "CFHydrostatics", "CFPlanets", "CFTimeSchemes", "CookBooks", "ManagedLoops", "MutatingOrNot", "SHTnsSpheres"]
+deps = ["CFBatchSolvers", "CFBoxes", "CFDiffusionSchemes", "CFDomains", "CFHydrostatics", "CFPlanets", "CFTimeSchemes", "CFTransport", "CookBooks", "ManagedLoops", "MutatingOrNot", "SHTnsSpheres"]
 path = "/home/dubos/Bureau/julia/pkg_devdir/CFCompressible"
 uuid = "a33e4613-43be-4f0e-b500-138f013d70af"
 version = "0.1.2"
@@ -101,9 +101,9 @@ version = "0.0.2"
 
 [[deps.CFDomains]]
 deps = ["MacroTools", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "Random"]
-git-tree-sha1 = "57a02e39c4d99f61dfbd9ff1c03b1287e8b34030"
+git-tree-sha1 = "eb91950dcefbc53535b3d180abe4585fb743570c"
 uuid = "3699aaca-035b-4155-96ec-eecb526248de"
-version = "0.3.14"
+version = "0.4.1"
 
     [deps.CFDomains.extensions]
     CFDomainsAdaptExt = ["Adapt"]
@@ -121,9 +121,9 @@ version = "0.3.14"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat"]
-git-tree-sha1 = "7713c859bee848f4ac90f88165bf472795e464e6"
+git-tree-sha1 = "c410574758e85f57a859825e7ce53937e207c5c6"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
-version = "0.4.6"
+version = "0.4.7"
 weakdeps = ["Adapt", "SHTnsSpheres"]
 
     [deps.CFHydrostatics.extensions]
@@ -144,9 +144,9 @@ version = "0.1.4"
 
 [[deps.CFTimeSchemes]]
 deps = ["MutatingOrNot", "PackageExtensionCompat"]
-path = "/home/dubos/Bureau/julia/pkg_devdir/CFTimeSchemes"
+git-tree-sha1 = "446995a2c5300b7e4a227563ba9c13120293a1c1"
 uuid = "79282218-dfaf-41aa-91df-a06f65ece871"
-version = "0.3.8"
+version = "0.3.9"
 weakdeps = ["Adapt"]
 
     [deps.CFTimeSchemes.extensions]
@@ -154,9 +154,9 @@ weakdeps = ["Adapt"]
 
 [[deps.CFTransport]]
 deps = ["CFDomains", "ManagedLoops", "MutatingOrNot"]
-git-tree-sha1 = "23e49ef12ca62303d3dbc1fb21c5257b315f8845"
+git-tree-sha1 = "cf6149066d2f88853bce8fdc61f8335da5b0906a"
 uuid = "aafcb771-6be4-4a54-aeb4-fb9a94868d38"
-version = "0.1.7"
+version = "0.1.9"
 
 [[deps.CPUSummary]]
 deps = ["CpuId", "IfElse", "PrecompileTools", "Preferences", "Static"]

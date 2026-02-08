@@ -39,7 +39,6 @@ function simulation(params, info, time_step, state0; ndays=params.ndays, interp=
             @time for j=1:div(interval, time_step)
                 advance!(state, scheme, state, t+(j-1)*time_step, time_step, scratch)
                 vertical_remap!(state, model, tmp_remap)
-                # run_loop(timeloop, 1, interval, state, scratch)
             end
         catch err
             show(err)

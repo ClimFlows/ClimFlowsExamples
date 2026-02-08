@@ -6,7 +6,7 @@ choices = (Fluid=IdealPerfectGas,
            vcoord=SigmaCoordinate,
            hyperdiff_n=3,
            remap_period=0,
-           nlat=128,
+           nlat=96,
            meshname="uni.2deg.mesh.nc",
            etopo="etopo40.nc",
            newton=(niter=3,          # number of Newton iterations, 3 needed when Xfactor==1
@@ -30,7 +30,7 @@ params = (testcase=(; Phi_m=(250*9.81)), # xi_m=0.1,
           courant=2.5,   # ignored at this point
           time_step=450.0, 
           interval=3600*4,
-          ndays=10,
+          ndays=1,
           # for tests and benchmarking
           dt=1000,
           Phis=0,

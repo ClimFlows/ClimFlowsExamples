@@ -16,14 +16,15 @@ using InteractiveUtils
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
+    using CFTransport
     using CFHydrostatics: CFHydrostatics, HPE
     using CFCompressible: CFCompressible, FCE
     using ClimFlowsTestCases: Jablonowski06, DCMIP
 
     using UnicodePlots: heatmap, scatterplot, lineplot
-#    using LinearAlgebra
     using Statistics: mean
     using Base.Filesystem: joinpath
+    using Serialization: serialize
 end
 
 # fill some CFTimeSchemes entry points
@@ -61,7 +62,7 @@ function setup(choices, params, sph, mgr)
     
     diags_HPE = CFHydrostatics.diagnostics(model_HPE)
     diags_FCE = CFCompressible.diagnostics(model_FCE)
-    state_HPE =  CFHydrostatics.initial_HPE(case, model_HPE)
+    state_HPE = CFHydrostatics.initial_HPE(case, model_HPE)
     state_FCE = CFCompressible.NH_state.diagnose(model_FCE, diags_HPE, state_HPE)
     return TwinModels(model_HPE, model_FCE), (HPE=state_HPE, FCE=state_FCE), (HPE=diags_HPE, FCE=diags_FCE)
 end
