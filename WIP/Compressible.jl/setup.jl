@@ -21,7 +21,6 @@ using InteractiveUtils
     using ClimFlowsTestCases: Jablonowski06, DCMIP
 
     using UnicodePlots: heatmap, scatterplot, lineplot
-#    using Unitful: m as meter, s as second, J as Joule, K as Kelvin, kg, Pa
     using LinearAlgebra
     using Statistics: mean
 end
