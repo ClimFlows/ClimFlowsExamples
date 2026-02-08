@@ -5,8 +5,7 @@ using InteractiveUtils
 
 includet("setup.jl");
 includet("run.jl");
-includet("quicklook.jl")
-includet("remap.jl")
+includet("quicklook.jl");
 include("config.jl");
 
 #============================  main program =========================#

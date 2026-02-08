@@ -7,17 +7,18 @@ using InteractiveUtils
     
     using SIMDMathFunctions
     using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
-    using MutatingOrNot: void, Void
+    using MutatingOrNot: void, similar!
 
     using CFTimeSchemes: scratch_space, tendencies!, advance!
     using CFTimeSchemes: RungeKutta4, KinnmarkGray, BackwardEuler, Midpoint, TRBDF2, ARK_TRBDF2
     using CFTimeSchemes: CFTimeSchemes, IVPSolver
-    using CFDomains: SigmaCoordinate, HyperDiffusion, HVLayout, laplace_dx, void
+    using CFDomains: SigmaCoordinate, HyperDiffusion, HVLayout, mass_coordinate, data_layout, void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, synthesis_scalar!
     using ClimFluids: IdealPerfectGas
     using CFPlanets: ShallowTradPlanet
-    using CFTransport
+    using CFTransport: remap_fluxes!
     using CFHydrostatics: CFHydrostatics, HPE
+    using CFHydrostatics.RemapHPE: vanleer, flatten, remap_density!, remap_scalar!, update_mass!
     using CFCompressible: CFCompressible, FCE
     using ClimFlowsTestCases: Jablonowski06, DCMIP
 
@@ -25,11 +26,8 @@ using InteractiveUtils
     using Statistics: mean
     using Base.Filesystem: joinpath
     using Serialization: serialize
-end
 
-# fill some CFTimeSchemes entry points
-CFTimeSchemes.tendencies!(slow, fast, scratch, model::CFCompressible.FCE, state, t, dt) = 
-    CFCompressible.tendencies!(slow, fast, scratch, model, state, t, dt )
+end
 
 #   use our multi-thread manager when updating the model state
 @inline CFTimeSchemes.update!(new, model::HPE, old, args...) = CFTimeSchemes.Update.update!(new, model.mgr, old, args...)

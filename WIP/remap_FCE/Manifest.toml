@@ -2,7 +2,7 @@
 
 julia_version = "1.10.10"
 manifest_format = "2.0"
-project_hash = "9bd5528ecf07acf1d147a4bcb993d7427d0b3c2c"
+project_hash = "2a9580df348792779c17f18f07dd214b8d43b640"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -90,9 +90,9 @@ version = "0.0.3"
 
 [[deps.CFCompressible]]
 deps = ["CFBatchSolvers", "CFBoxes", "CFDiffusionSchemes", "CFDomains", "CFHydrostatics", "CFPlanets", "CFTimeSchemes", "CFTransport", "CookBooks", "ManagedLoops", "MutatingOrNot", "SHTnsSpheres"]
-path = "/home/dubos/Bureau/julia/pkg_devdir/CFCompressible"
+git-tree-sha1 = "b4f1f04c7abfd612295cddc10696a6a48753bbec"
 uuid = "a33e4613-43be-4f0e-b500-138f013d70af"
-version = "0.1.2"
+version = "0.1.1"
 
 [[deps.CFDiffusionSchemes]]
 git-tree-sha1 = "bcc91fca59b391e0daf649a9357ed27ed95709c0"

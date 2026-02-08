@@ -3,13 +3,6 @@ struct TwinModels{Hydro, NH}
     FCE::NH
 end
 
-function CFTimeSchemes.tendencies!(slow, fast, tmp, model::TwinModels, state, t, tau)
-    stamp(str) = "$str (t=$t, τ=$tau)"
-    slow_HPE, fast_HPE, tmp_HPE = CFTimeSchemes.tendencies!(slow.HPE, fast.HPE, tmp.HPE, model.HPE, state.HPE, t, tau)
-    slow_FCE, fast_FCE, tmp_FCE = CFTimeSchemes.tendencies!(slow.FCE, fast.FCE, tmp.FCE, model.FCE, state.FCE, t, tau)
-    return (HPE=slow_HPE, FCE=slow_FCE), (HPE=fast_HPE, FCE=fast_FCE), (HPE=tmp_HPE, FCE=tmp_FCE)
-end
-
 # everything that does not depend on initial condition
 struct TimeLoopInfo{Sphere,Dyn,Scheme,Filter,Diags}
     sphere::Sphere
@@ -76,4 +69,69 @@ function duration(days)
             return "$(round(seconds ; sigdigits=2)) seconds"
         end
     end
+end
+
+function CFTimeSchemes.tendencies!(slow, fast, tmp, model::TwinModels, state, t, tau)
+    stamp(str) = "$str (t=$t, τ=$tau)"
+    slow_HPE, fast_HPE, tmp_HPE = CFTimeSchemes.tendencies!(slow.HPE, fast.HPE, tmp.HPE, model.HPE, state.HPE, t, tau)
+    slow_FCE, fast_FCE, tmp_FCE = CFTimeSchemes.tendencies!(slow.FCE, fast.FCE, tmp.FCE, model.FCE, state.FCE, t, tau)
+    return (HPE=slow_HPE, FCE=slow_FCE), (HPE=fast_HPE, FCE=fast_FCE), (HPE=tmp_HPE, FCE=tmp_FCE)
+end
+
+CFTimeSchemes.tendencies!(slow, fast, scratch, model::FCE, state, t, dt) = 
+    CFCompressible.tendencies!(slow, fast, scratch, model, state, t, dt )
+
+#========================= vertical remap ==========================#
+
+function vertical_remap!(state, model::TwinModels, tmp)
+    tmp_HPE = vertical_remap!(state.HPE, model.HPE, tmp.HPE)
+    tmp_FCE = vertical_remap!(state.FCE, model.FCE, tmp.FCE)
+    return (HPE=tmp_HPE, FCE=tmp_FCE) # == tmp
+end
+
+vertical_remap!(state, model::FCE, tmp) = CFCompressible.vertical_remap!(state, model, tmp)
+
+function vertical_remap!(state, model::HPE, scratch = void)
+    layout = data_layout(model.domain)
+    sph = model.domain.layer
+    mass_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.air, state.mass_air_spec, sph)
+    massq_spat = SHTnsSpheres.synthesis_scalar!(scratch.masses_spat.consvar, state.mass_consvar_spec, sph)
+    uv_spat = SHTnsSpheres.synthesis_vector!(scratch.uv_spat, state.uv_spec, sph)
+    now = (
+        mass = mass_spat*model.planet.radius^-2,
+        massq = massq_spat,
+        ux = uv_spat.ucolat,
+        uy = uv_spat.ulon,
+    )
+    new, scratch_remapped =
+        remap_HPE!(model.mgr, model.vcoord, layout, scratch.new, scratch.remapped, now)
+
+    reshp(x) = reshape(x, size(mass_spat, 1), size(mass_spat, 2), size(mass_spat, 3))
+    mass_spat .= reshp(new.mass)*model.planet.radius^2
+    massq_spat .= reshp(new.massq)
+    mass_air_spec = SHTnsSpheres.analysis_scalar!(state.mass_air_spec, mass_spat, sph)
+    mass_consvar_spec = SHTnsSpheres.analysis_scalar!(state.mass_consvar_spec, massq_spat, sph)
+    ucolat, ulon = reshp(new.ux), reshp(new.uy)
+    uv_spec = SHTnsSpheres.analysis_vector!(state.uv_spec, (;ucolat, ulon), sph)
+
+    return (; masses_spat=(; air=mass_spat, consvar=massq_spat), uv_spat, new, remapped=scratch_remapped)
+end
+
+function remap_HPE!(mgr, vcoord, layout, #==# new, #==# scratch, #==# now, schemes=(scalar=vanleer, momentum=vanleer))
+    (; mass, massq, ux, uy) = map( x->flatten(x, layout), now)
+    scheme_mq = schemes.scalar(:density, layout)
+    scheme_u = schemes.momentum(:scalar, layout)
+    # mass fluxes and new mass
+    mcoord = mass_coordinate(vcoord, one(eltype(mass)))
+    flux, new_mass = remap_fluxes!(mgr, mcoord, flatten(layout), scratch.flux, scratch.new_mass, #==# mass)
+    # vertical transport of densities
+    fluxq = similar!(scratch.fluxq, flux)
+    slope = similar!(scratch.slope, massq)
+    q = similar!(scratch.q, massq)
+    new_massq = remap_density!(mgr, scheme_mq, new.massq, #==# fluxq, slope, q, #==# massq, mass, flux)
+    # vertical transport of momentum
+    new_ux = remap_scalar!(mgr, scheme_u, new.ux, #==# fluxq, slope, #==# ux, mass, flux)
+    new_uy = remap_scalar!(mgr, scheme_u, new.uy, #==# fluxq, slope, #==# uy, mass, flux)
+    new_mass = update_mass!(mgr, new.mass, #==# new_mass)
+    return (mass=new_mass, massq=new_massq, ux=new_ux, uy=new_uy), (; flux, new_mass, fluxq, slope, q)
 end
