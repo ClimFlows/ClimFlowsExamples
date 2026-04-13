@@ -3,22 +3,24 @@
 # [Full script](VoronoiSW.jl)
 # ![](VoronoiSW_3D.mp4)
 
-# ## Preamble
 using Pkg; Pkg.activate(@__DIR__); Pkg.status()
 using Revise
 using InteractiveUtils
 
+# ## Preamble
+
 @time_imports begin
     # lightweight dependencies
-    import CFDomains: CFDomains, VoronoiSphere, HyperDiffusion
+    import VoronoiSpheres: VoronoiSpheres, VoronoiSphere
+    import CFDomains: CFDomains, HyperDiffusion
     import CFTimeSchemes: CFTimeSchemes, advance!
     import CFPlanets
     import CFShallowWaters
     import ClimFlowsTestCases as CFTestCases
     # heavy dependencies
     using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
-    import ClimFlowsPlots: VoronoiSphere as VSPlots
-    using CairoMakie
+#    import ClimFlowsPlots: VoronoiSphere as VSPlots
+#    using CairoMakie
     using NetCDF: ncread
 end
 
@@ -38,7 +40,7 @@ function MySolver(dyn_scheme, dissip, nstep, dt ; u0=nothing, mutating=false)
 end
 
 function filter_ucov(out, dissip, (; ghcov, ucov), dt, scratch)
-    ucov_out = CFDomains.hyperdiff!(out.ucov, ucov, dissip, dissip.domain, dt, scratch, nothing)
+    ucov_out = VoronoiSpheres.hyperdiff!(out.ucov, ucov, dissip, dissip.domain, dt, scratch, nothing)
     ghcov_out = @. out.ghcov = ghcov
     return (ghcov=ghcov_out, ucov=ucov_out)
 end
@@ -79,7 +81,7 @@ function setup_RSW(
     (; R0, Omega, gH0) = testcase.params
 
     ## numerical parameters
-    @time dx = R0 * CFDomains.laplace_dx(sphere)
+    @time dx = R0 *VoronoiSpheres.laplace_dx(sphere)
     @info "Effective mesh size dx = $(round(dx/1e3)) km"
     dt_dyn = Float(courant * dx / sqrt(gH0))
     @info "Maximum dynamics time step = $(round(dt_dyn)) s"
@@ -108,11 +110,24 @@ function setup_RSW(
     return dynamics, diags, state0, split_solver, nstep, dt
 end
 
-diagnose_pv(diags, state) = CFDomains.primal_from_dual(max.(0, open(diags; state).pv), sphere)
+diagnose_pv(diags, state) = primal_from_dual(max.(0, open(diags; state).pv), sphere)
+
+# First-order area-weighted interpolation from dual cells to primal cells
+function primal_from_dual(fv, mesh)
+    inv_Ai = mesh.inv_Ai
+    fi = similar(inv_Ai)
+    sph = VoronoiSpheres.Stencils.average_vi_form(mesh)
+    for ij in eachindex(fi)
+        fi[ij] = inv_Ai[ij] * VoronoiSpheres.Stencils.average_vi_form(sph, ij)(fv)
+    end
+    return fi
+end
+
 
 # ## Main program
 
-meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-14
+meshname, nu_gradrot = "uni.1deg.mesh.nc", 1e-9 # 1e-8 very diffusive, 1e-7 blows up
+# meshname, nu_gradrot = "uni.2deg.mesh.nc", 1e-10 # 1e-9 very diffusive, 1e-7 blows up
 Float = Float32
 periods, hours_per_period = 60, Float(4)
 sphere = VoronoiSphere(DYNAMICO_reader(ncread, DYNAMICO_meshfile(meshname)) ; prec=Float)
@@ -123,20 +138,6 @@ solver! = solver(true)
 @info "Macro time step = $(solver!.dt) s"
 @info "Interval = $(3600*hours_per_period) s"
 
-pv = CairoMakie.Observable(diagnose_pv(diags, state0))
-
-fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
-# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
-# fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
-
-let future = deepcopy(state0)
-    record(fig, "$(@__DIR__)/PV.mp4", 1:periods) do hour
-        @info "Hour $(hour*hours_per_period) / $(periods*hours_per_period)"
-        @time advance!(future, solver!, future, zero(Float), nstep)
-        pv[] = diagnose_pv(diags, future)
-    end
-end
-
 #=
 @info "Pure time integration without the overhead of the animation:"
 @profview let future = deepcopy(state0)
@@ -145,3 +146,25 @@ end
     end
 end ;
 =#
+
+# ##
+
+@time_imports begin
+    import ClimFlowsPlots: VoronoiSphere as VSPlots
+    using CairoMakie
+    using GeoMakie # triggers orthographic_plot
+end
+
+pv = CairoMakie.Observable(diagnose_pv(diags, state0))
+
+# fig = VSPlots.plot_orthographic(sphere, pv ; colormap=:berlin); # slow but good-looking
+# fig = VSPlots.plot_2D(sphere, pv; resolution=0.5); # much faster but less fancy
+fig = VSPlots.plot_native_3D(sphere, pv; zoom=1);
+
+let future = deepcopy(state0)
+    record(fig, "$(@__DIR__)/PV.mp4", 1:periods) do hour
+        @info "Hour $(hour*hours_per_period) / $(periods*hours_per_period)"
+        @time advance!(future, solver!, future, zero(Float), nstep)
+        pv[] = diagnose_pv(diags, future)
+    end
+end

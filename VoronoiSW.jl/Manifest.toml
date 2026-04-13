@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.10"
+julia_version = "1.10.11"
 manifest_format = "2.0"
-project_hash = "c3befe54fed78049c1795c49b45644cf42a55e3d"
+project_hash = "52cc85cb3b0b60c45d98e5eab7a07b39f25fbef1"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -115,9 +115,9 @@ version = "0.5.0"
 
 [[deps.CFDomains]]
 deps = ["MacroTools", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "Random"]
-git-tree-sha1 = "57a02e39c4d99f61dfbd9ff1c03b1287e8b34030"
+git-tree-sha1 = "f703bfbbf7fc707f233e8004e8ee8f09d2773f68"
 uuid = "3699aaca-035b-4155-96ec-eecb526248de"
-version = "0.3.14"
+version = "0.5.1"
 
     [deps.CFDomains.extensions]
     CFDomainsAdaptExt = ["Adapt"]
@@ -146,10 +146,10 @@ version = "0.1.4"
     ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 
 [[deps.CFShallowWaters]]
-deps = ["CFDomains", "CFPlanets", "CookBooks", "ManagedLoops", "MemberFunctions", "MutatingOrNot", "PackageExtensionCompat"]
-git-tree-sha1 = "39a26ac2acc6c14b355e83fee6f299eede38a8b8"
+deps = ["CFDomains", "CFPlanets", "CookBooks", "ManagedLoops", "MemberFunctions", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
+git-tree-sha1 = "ffbc427a0409a634bbe33c48f79c743c235733d5"
 uuid = "27b57071-4f7a-481a-ba32-ffa10dd904ac"
-version = "0.2.1"
+version = "0.2.2"
 weakdeps = ["CFTimeSchemes"]
 
     [deps.CFShallowWaters.extensions]
@@ -157,9 +157,9 @@ weakdeps = ["CFTimeSchemes"]
 
 [[deps.CFTimeSchemes]]
 deps = ["MutatingOrNot", "PackageExtensionCompat"]
-git-tree-sha1 = "78230f29ae64ac0248fa8beee0f9532924869fa5"
+git-tree-sha1 = "446995a2c5300b7e4a227563ba9c13120293a1c1"
 uuid = "79282218-dfaf-41aa-91df-a06f65ece871"
-version = "0.3.8"
+version = "0.3.9"
 weakdeps = ["Adapt"]
 
     [deps.CFTimeSchemes.extensions]
@@ -215,10 +215,14 @@ uuid = "f57ce217-a21f-4063-8e40-561e9bf56723"
 version = "0.2.1"
 
 [[deps.ClimFlowsPlots]]
-deps = ["BoundingSphere", "ColorSchemes", "GeoMakie", "GeometryBasics", "LightGraphs", "Makie", "Metis", "StaticArrays"]
-git-tree-sha1 = "b28e147446929163a4c3ca35f5a2197b59e733b0"
+deps = ["BoundingSphere", "ColorSchemes", "GeometryBasics", "LightGraphs", "Metis", "StaticArrays"]
+git-tree-sha1 = "bc763776ea7242230403d2e7545cded6b062050e"
 uuid = "dd0979db-5334-4d13-8d2e-fa88a4f47f12"
-version = "0.1.2"
+version = "0.2.2"
+weakdeps = ["GeoMakie", "Makie"]
+
+    [deps.ClimFlowsPlots.extensions]
+    GeoMakie_Ext = ["GeoMakie", "Makie"]
 
 [[deps.ClimFlowsTestCases]]
 git-tree-sha1 = "140f7d58fa0e4b48f183dc7e0e768ab53e95ff4e"
@@ -1008,7 +1012,7 @@ version = "0.5.7"
 [[deps.MbedTLS_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
-version = "2.28.2+1"
+version = "2.28.1010+0"
 
 [[deps.MemberFunctions]]
 git-tree-sha1 = "9f1ded928d2b90c5aee2ae3b0d084c2f50c143af"
@@ -1054,7 +1058,7 @@ version = "0.3.4"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-version = "2023.1.10"
+version = "2025.12.2"
 
 [[deps.MutatingOrNot]]
 deps = ["PackageExtensionCompat"]
@@ -1129,7 +1133,7 @@ version = "0.3.29+0"
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
-version = "0.3.23+4"
+version = "0.3.23+5"
 
 [[deps.OpenEXR]]
 deps = ["Colors", "FileIO", "OpenEXR_jll"]
@@ -1200,9 +1204,9 @@ version = "0.4.4"
 
 [[deps.PROJ_jll]]
 deps = ["Artifacts", "JLLWrappers", "LibCURL_jll", "Libdl", "Libtiff_jll", "SQLite_jll"]
-git-tree-sha1 = "817778f5802156bff35b472c73b0c4e611bd23c3"
+git-tree-sha1 = "af57004c3b686097d563f9c394d7886431a38c75"
 uuid = "58948b4f-47e0-5654-a9ad-f609743f8632"
-version = "902.700.0+0"
+version = "902.700.100+0"
 
 [[deps.PackageExtensionCompat]]
 git-tree-sha1 = "fb28e33b8a95c4cee25ce296c817d89cc2e53518"
@@ -1625,6 +1629,20 @@ git-tree-sha1 = "53915e50200959667e78a92a418594b428dffddf"
 uuid = "1cfade01-22cf-5700-b092-accc4b62d6e1"
 version = "0.4.1"
 
+[[deps.VoronoiSpheres]]
+deps = ["CFDomains", "MacroTools", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "Random"]
+git-tree-sha1 = "2f04f5ba1e8112ead3285391f8f27a2d1bdaa828"
+uuid = "75509e46-8d8c-4f7e-9072-0d95c5edd9e4"
+version = "0.1.4"
+
+    [deps.VoronoiSpheres.extensions]
+    VoronoiSpheresAdaptExt = ["Adapt"]
+    VoronoiSpheresMooncakeExt = ["Mooncake"]
+
+    [deps.VoronoiSpheres.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+    Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
+
 [[deps.WebP]]
 deps = ["CEnum", "ColorTypes", "FileIO", "FixedPointNumbers", "ImageCore", "libwebp_jll"]
 git-tree-sha1 = "aa1ca3c47f119fbdae8770c29820e5e6119b83f2"
@@ -1793,7 +1811,7 @@ version = "2022.0.0+1"
 [[deps.p7zip_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
-version = "17.4.0+2"
+version = "17.6.1+0"
 
 [[deps.x264_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
