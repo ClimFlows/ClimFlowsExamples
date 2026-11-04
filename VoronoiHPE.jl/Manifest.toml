@@ -216,7 +216,7 @@ version = "0.4.1"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat"]
-path = "/home/dubos/.julia/dev/CFHydrostatics"
+git-tree-sha1 = "7954ccd0669614b6dfeb30e2fcc104d71f9019c7"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
 version = "0.4.8"
 weakdeps = ["Adapt", "SHTnsSpheres"]
@@ -1299,7 +1299,7 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[deps.LoopManagers]]
 deps = ["HostCPUFeatures", "ManagedLoops", "PackageExtensionCompat", "Polyester", "SIMD"]
-path = "/home/dubos/.julia/dev/LoopManagers"
+git-tree-sha1 = "6060af3ae13a9a5b0d55fd329801c7ce180bd128"
 uuid = "d33d4f76-8fbe-47a6-acd9-ead534c583ff"
 version = "0.3.0"
 weakdeps = ["KernelAbstractions"]
@@ -1356,7 +1356,7 @@ version = "0.7.3"
 
 [[deps.ManagedLoops]]
 deps = ["MacroTools", "PackageExtensionCompat"]
-path = "/home/dubos/.julia/dev/ManagedLoops"
+git-tree-sha1 = "3ded41456b746b4478f7b0fcd19924693dbf9c33"
 uuid = "36a4119d-6b73-4371-88fe-ba2d91f5495d"
 version = "0.1.15"
 weakdeps = ["Adapt"]
