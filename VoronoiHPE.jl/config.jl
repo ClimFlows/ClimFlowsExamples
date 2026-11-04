@@ -4,23 +4,23 @@
 choices = (
     # computing
     compare_to_spectral = false,
-    cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
+    cpu = MultiThread(VectorizedCPU(8), 8), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-    blocks = (oneAPI=(0,8), CUDA=(0,32)), # roughly tuned Intel Iris Xe and NVIDIA V100
+    blocks = (oneAPI=(0,8), CUDA=GPUConfig(2,4)), # roughly tuned Intel Iris Xe and NVIDIA V100
     precision = Float32,
     # numerics
-    meshname = DYNAMICO_meshfile("uni.2deg.mesh.nc"),
-    coordinate = NCARL30, # SigmaCoordinate 
-    nz = 30,
+    meshname = DYNAMICO_meshfile("uni.1deg.mesh.nc"),
+    coordinate = SigmaCoordinate , # NCARL30, # 
+    nz = 96,
     nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
-    remap_period = 3, # number of RK time steps between two remaps
+    remap_period = 0, # 3, # number of RK time steps between two remaps
     # physics
     Fluid = IdealPerfectGas,
     TestCase = Jablonowski06,
     # simulation
-    ndays = 10,
+    ndays = 4,
     filename = "VoronoiHPE",
     outputs = (:Omega, :surface_pressure, :temperature),
     # outputs = (:Phi_dot, :Omega, :ulon, :ulat, :dulat, :surface_pressure, :temperature, :pressure, :geopotential),
@@ -28,7 +28,7 @@ choices = (
 
 params = (
     # numerics
-    courant = 4.0,
+    courant = 3.8, # 4.0,
     # physics
     radius = 6.4e6,
     Omega = 7.27220521664304e-5,

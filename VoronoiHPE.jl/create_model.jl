@@ -33,6 +33,15 @@ end
 model, diags, state0 = let params = rmap(choices.precision, params)
     reader = DYNAMICO_reader(ncread, choices.meshname)
     vsphere = VoronoiSphere(reader; prec=choices.precision)
+    # pad trisk and wee
+    for ij in axes(vsphere.le_de, 1)
+        deg = vsphere.trisk_deg[ij]
+        e0 = vsphere.trisk[deg,ij] # last edge in stencil
+        for e = deg+1:size(vsphere.trisk,1)
+            vsphere.trisk[e, ij] = e0
+            vsphere.wee[e,ij] = 0
+        end
+    end
     @info vsphere
     setup(vsphere, choices, params)
 end;

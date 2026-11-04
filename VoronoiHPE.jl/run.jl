@@ -43,8 +43,10 @@ function run_loop(timeloop::TimeLoop, N, interval, state; dt = timeloop.solver.d
     end
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
+
     for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
+        # return nothing # FIXME: GPU benchmark only
         if remap_period>0 && mod(iter, remap_period) ==0
             CFHydrostatics.RemapVoronoi.remap!(state, scratch, model, state)
         end
@@ -63,7 +65,8 @@ function simulation(save, choices, params, gpu, model, diags, to_lonlat, state0;
     let model = model|>gpu, state0 = state0|>gpu
         @info "Starting simulation on $(model.mgr)."
         timeloop = TimeLoop(choices.TimeScheme(model), dt, choices.remap_period, diags, state0, true) # mutating, non-allocating
-
+        # return nothing # FIXME: GPU benchmark only
+        
         @info "Macro time step = $(timeloop.solver.dt) s"
         @info "Interval = $interval s"
 
@@ -71,6 +74,7 @@ function simulation(save, choices, params, gpu, model, diags, to_lonlat, state0;
         for iter = 1:N
             @info "t=$(div(interval*(iter-1),3600))h"
             @time run_loop(timeloop, 1, interval, state)
+            # return nothing # FIXME: GPU benchmark only
             save(state)
             if mod(params.interval * iter, 24*3600) == 0
                 @info "day $(params.interval * iter/86400)"
