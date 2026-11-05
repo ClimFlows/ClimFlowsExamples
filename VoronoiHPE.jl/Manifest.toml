@@ -2,7 +2,7 @@
 
 julia_version = "1.10.11"
 manifest_format = "2.0"
-project_hash = "bdcbb523db5b14f626ced68f6561840d34d2b246"
+project_hash = "771c8b5e2e6030fd0722dbe34c7cc36fb085519f"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -196,9 +196,9 @@ version = "0.5.0"
 
 [[deps.CFDomains]]
 deps = ["MacroTools", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "Random"]
-git-tree-sha1 = "eb91950dcefbc53535b3d180abe4585fb743570c"
+git-tree-sha1 = "f703bfbbf7fc707f233e8004e8ee8f09d2773f68"
 uuid = "3699aaca-035b-4155-96ec-eecb526248de"
-version = "0.4.1"
+version = "0.5.1"
 
     [deps.CFDomains.extensions]
     CFDomainsAdaptExt = ["Adapt"]
@@ -215,10 +215,10 @@ version = "0.4.1"
     SIMD = "fdea26ae-647d-5447-a871-4b548cad5224"
 
 [[deps.CFHydrostatics]]
-deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat"]
-git-tree-sha1 = "7954ccd0669614b6dfeb30e2fcc104d71f9019c7"
+deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
+git-tree-sha1 = "04c88a1c7309d76bdbbf2a990875af4434b19b3b"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
-version = "0.4.8"
+version = "0.5.0"
 weakdeps = ["Adapt", "SHTnsSpheres"]
 
     [deps.CFHydrostatics.extensions]
@@ -248,10 +248,10 @@ weakdeps = ["Adapt"]
     Adapt_Ext = "Adapt"
 
 [[deps.CFTransport]]
-deps = ["CFDomains", "ManagedLoops", "MutatingOrNot"]
-git-tree-sha1 = "cf6149066d2f88853bce8fdc61f8335da5b0906a"
+deps = ["CFDomains", "ManagedLoops", "MutatingOrNot", "VoronoiSpheres"]
+git-tree-sha1 = "0a70f5924b975b02c123e46b9c582b43ae12265a"
 uuid = "aafcb771-6be4-4a54-aeb4-fb9a94868d38"
-version = "0.1.9"
+version = "0.1.10"
 
 [[deps.CPUSummary]]
 deps = ["CpuId", "IfElse", "PrecompileTools", "Preferences", "Static"]
@@ -334,9 +334,9 @@ weakdeps = ["SparseArrays"]
 
 [[deps.ClimFlowsData]]
 deps = ["LazyArtifacts"]
-git-tree-sha1 = "6148f04e4aa0f8f9b36caa444390a5bbad6bf5e0"
+git-tree-sha1 = "1394a2e8be3fa6020c43b82cd0bc5a04cb0649fa"
 uuid = "f57ce217-a21f-4063-8e40-561e9bf56723"
-version = "0.2.1"
+version = "0.3.0"
 
 [[deps.ClimFlowsPlots]]
 deps = ["BoundingSphere", "ColorSchemes", "GeoMakie", "GeometryBasics", "LightGraphs", "Makie", "Metis", "StaticArrays"]
@@ -2370,6 +2370,20 @@ deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPoin
 git-tree-sha1 = "d1d9a935a26c475ebffd54e9c7ad11627c43ea85"
 uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
 version = "0.21.72"
+
+[[deps.VoronoiSpheres]]
+deps = ["CFDomains", "MacroTools", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "Random"]
+git-tree-sha1 = "c7e47642f613c9ff8fe9abb210786061d92ab07d"
+uuid = "75509e46-8d8c-4f7e-9072-0d95c5edd9e4"
+version = "0.1.5"
+
+    [deps.VoronoiSpheres.extensions]
+    VoronoiSpheresAdaptExt = ["Adapt"]
+    VoronoiSpheresMooncakeExt = ["Mooncake"]
+
+    [deps.VoronoiSpheres.weakdeps]
+    Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+    Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 
 [[deps.WeakKeyIdDicts]]
 git-tree-sha1 = "349165887b0cfdcbb97261e7eb0e7f11d7b39845"

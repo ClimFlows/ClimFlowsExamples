@@ -43,6 +43,7 @@ SHTnsSpheres = "0.2.8"
 Strided = "2.2.0"
 ThreadPinning = "1.0.2"
 UnicodePlots = "3.7.1"
+VoronoiSpheres = "0.1.5"
 
 [extras]
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
