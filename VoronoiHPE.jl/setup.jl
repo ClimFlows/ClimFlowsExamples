@@ -3,7 +3,7 @@
     pinthreads(:cores)
 
     # heavy dependencies
-    using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
+    using ClimFlowsData: DYNAMICO_reader, VoronoiMeshes
     using ClimFlowsPlots
     using NetCDF: ncread, ncwrite, nccreate, ncclose
     using UnicodePlots: heatmap, scatterplot
@@ -15,7 +15,10 @@
 
     import ManagedLoops, LoopManagers
     using LoopManagers: LoopManager, GPUConfig, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
-    using CFDomains: SigmaCoordinate, HyperDiffusion, VoronoiSphere, void
+    import CFDomains
+    using CFDomains: SigmaCoordinate, HyperDiffusion, void
+    import VoronoiSpheres
+    using VoronoiSpheres: VoronoiSphere
     using CFTimeSchemes: scratch_space, tendencies!, advance!
     using CFTimeSchemes: CFTimeSchemes, RungeKutta4, KinnmarkGray, IVPSolver
     using CFPlanets: ShallowTradPlanet

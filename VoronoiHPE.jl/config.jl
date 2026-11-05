@@ -9,7 +9,7 @@ choices = (
     blocks = (oneAPI=(0,8), CUDA=GPUConfig(2,4)), # roughly tuned Intel Iris Xe and NVIDIA V100
     precision = Float32,
     # numerics
-    meshname = DYNAMICO_meshfile("uni.1deg.mesh.nc"),
+    meshname = VoronoiMeshes("uni.1deg.mesh.nc"),
     coordinate = SigmaCoordinate , # NCARL30, # 
     nz = 96,
     nlat = 64, # for the spectral model

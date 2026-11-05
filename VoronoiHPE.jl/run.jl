@@ -22,7 +22,7 @@ function max_time_step(model, diags, courant, interval, state)
     T, p = session.temperature_i, session.pressure_i
     sound_speed = model.gas(:p, :T).sound_speed
     cmax = maximum(@. sound_speed(p,T) + sqrt(2*ke))
-    dx = model.planet.radius * CFDomains.laplace_dx(model.domain.layer)
+    dx = model.planet.radius * VoronoiSpheres.laplace_dx(model.domain.layer)
     dt = dx * courant / cmax
     final_dt = divisor(dt, interval)
     @info "Time step:" cmax dx dt interval final_dt
