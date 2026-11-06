@@ -25,7 +25,9 @@ include("run.jl")
 
 tape = [state0]
 @time simulation(choices, params, gpu, model, diags, to_lonlat, state0) do state_gpu
-    push!(tape, state_gpu |> cpu)
+    # `cpu` adapts GPU arrays to the host but is the identity on CPU arrays.
+    # Take a snapshot so that tape entries do not alias the live state.
+    push!(tape, deepcopy(state_gpu |> cpu))
 end;
 
 include("save.jl")
