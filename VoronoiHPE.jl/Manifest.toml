@@ -216,7 +216,7 @@ version = "0.5.1"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
-git-tree-sha1 = "d4893b511c97e3f52b94baa01f6ddd2cf0d0d3f3"
+git-tree-sha1 = "57ec16188e4f48f37dff9216579702463042b28f"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
 version = "0.5.1"
 weakdeps = ["Adapt", "SHTnsSpheres"]
