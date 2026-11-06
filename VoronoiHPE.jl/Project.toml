@@ -25,7 +25,7 @@ VoronoiSpheres = "75509e46-8d8c-4f7e-9072-0d95c5edd9e4"
 
 [compat]
 CFDomains = "0.5.1"
-CFHydrostatics = "0.5.0"
+CFHydrostatics = "0.5.1"
 CFPlanets = "0.1.1"
 CFTimeSchemes = "0.3.1"
 CFTransport = "0.1.10"

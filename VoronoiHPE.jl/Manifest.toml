@@ -2,7 +2,7 @@
 
 julia_version = "1.10.11"
 manifest_format = "2.0"
-project_hash = "771c8b5e2e6030fd0722dbe34c7cc36fb085519f"
+project_hash = "5be64076a0a135750ba4cc89a97ab3060dacba7c"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -216,9 +216,9 @@ version = "0.5.1"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
-git-tree-sha1 = "04c88a1c7309d76bdbbf2a990875af4434b19b3b"
+git-tree-sha1 = "d4893b511c97e3f52b94baa01f6ddd2cf0d0d3f3"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
-version = "0.5.0"
+version = "0.5.1"
 weakdeps = ["Adapt", "SHTnsSpheres"]
 
     [deps.CFHydrostatics.extensions]
