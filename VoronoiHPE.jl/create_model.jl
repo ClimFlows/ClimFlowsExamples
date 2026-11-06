@@ -39,6 +39,28 @@ end;
 
 vsphere = model.domain.layer
 
+# ClimFlowsPlots 0.1.2 expects the pre-VoronoiSpheres layout, where
+# edge_down_up and dual_vertex are matrices rather than vectors of tuples.
+function interpolation_mesh(vsphere)
+    edge_down_up = Matrix{Int32}(undef, 2, length(vsphere.edge_down_up))
+    for i in eachindex(vsphere.edge_down_up)
+        edge_down_up[1, i], edge_down_up[2, i] = vsphere.edge_down_up[i]
+    end
+    dual_vertex = Matrix{Int32}(undef, 3, length(vsphere.dual_vertex))
+    for i in eachindex(vsphere.dual_vertex)
+        dual_vertex[1, i], dual_vertex[2, i], dual_vertex[3, i] = vsphere.dual_vertex[i]
+    end
+    return (;
+        Ai = vsphere.Ai,
+        Av = vsphere.Av,
+        lon_i = vsphere.lon_i,
+        lat_i = vsphere.lat_i,
+        le = vsphere.le,
+        edge_down_up,
+        dual_vertex,
+    )
+end
+
 if choices.compare_to_spectral
     @time_imports using SHTnsSpheres: SHTnsSphere
 
@@ -61,7 +83,7 @@ if choices.compare_to_spectral
         lons, lats = to_deg * ssphere.lon[1, :], to_deg * ssphere.lat[:, 1]
         permute(data) = permutedims(data, (2, 3, 1)) # k=1,i=2,j=3 -> i=2,j=3,k=1
         permute(data::Matrix) = data
-        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(vsphere, lons, lats)
+        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(interpolation_mesh(vsphere), lons, lats)
         permute ∘ interp ∘ Array
     end
 
@@ -88,7 +110,7 @@ else
         lons, lats = F.(1:2:360), F.(-89:2:90)
         permute(data) = permutedims(data, (2, 3, 1))
         permute(data::Matrix) = data
-        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(vsphere, lons, lats)
+        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(interpolation_mesh(vsphere), lons, lats)
         permute ∘ interp ∘ Array
     end
 end

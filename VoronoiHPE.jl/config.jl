@@ -6,13 +6,13 @@ choices = (
     compare_to_spectral = false,
     cpu = MultiThread(VectorizedCPU(16), 2), # PlainCPU(), # VectorizedCPU(8),
     try_gpu = true,
-    blocks = (oneAPI=(0,8), CUDA=(0,32)), # roughly tuned Intel Iris Xe and NVIDIA V100
+    blocks = (oneAPI=(0,8), CUDA=GPUConfig(2,4)), # roughly tuned Intel Iris Xe and NVIDIA V100
     precision = Float32,
     # numerics
-    meshname = DYNAMICO_meshfile("uni.2deg.mesh.nc"),
+    meshname = VoronoiMeshes("uni.2deg.mesh.nc"),
     coordinate = NCARL30, # SigmaCoordinate 
     nz = 30,
-    nlat = 64, # for the spectral model
+    nlat = 64, # for the spectral model
     consvar = :temperature,
     TimeScheme = KinnmarkGray{2,5}, # RungeKutta4,
     remap_period = 3, # number of RK time steps between two remaps

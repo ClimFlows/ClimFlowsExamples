@@ -3,7 +3,7 @@
     pinthreads(:cores)
 
     # heavy dependencies
-    using ClimFlowsData: DYNAMICO_reader, DYNAMICO_meshfile
+    using ClimFlowsData: DYNAMICO_reader, VoronoiMeshes
     using ClimFlowsPlots
     using NetCDF: ncread, ncwrite, nccreate, ncclose
     using UnicodePlots: heatmap, scatterplot
@@ -13,8 +13,12 @@
     using Strided: Strided, @strided
     using BenchmarkTools: @btime, @benchmark
 
-    using LoopManagers: LoopManager, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
-    using CFDomains: SigmaCoordinate, HyperDiffusion, VoronoiSphere, void
+    import ManagedLoops, LoopManagers
+    using LoopManagers: LoopManager, GPUConfig, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
+    import CFDomains
+    using CFDomains: SigmaCoordinate, HyperDiffusion, void
+    import VoronoiSpheres
+    using VoronoiSpheres: VoronoiSphere
     using CFTimeSchemes: scratch_space, tendencies!, advance!
     using CFTimeSchemes: CFTimeSchemes, RungeKutta4, KinnmarkGray, IVPSolver
     using CFPlanets: ShallowTradPlanet
@@ -24,12 +28,14 @@
 end
 
 # multi-thread transposition
-import CFHydrostatics.Voronoi.Dynamics: transpose!, Void
+import CFDomains: transpose!, Void
 function transpose!(x, ::MultiThread, y)
     @strided permutedims!(x, y, (2,1))
     return x # otherwise returns a StridedView
 end
 transpose!(::Void, ::MultiThread, y) = permutedims(y, (2,1)) # for non-ambiguity
+transpose!(::Void, ::LoopManagers.KernelAbstractions_GPU, y) = CUDA.CUBLAS.geam('T', 'T', 1, y, 0, y)
+transpose!(x, ::LoopManagers.KernelAbstractions_GPU, y) = CUDA.CUBLAS.geam!('T', 'T', 1, y, 0, y, x)
 
 ## model setup
 

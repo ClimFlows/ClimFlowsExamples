@@ -22,7 +22,7 @@ function max_time_step(model, diags, courant, interval, state)
     T, p = session.temperature_i, session.pressure_i
     sound_speed = model.gas(:p, :T).sound_speed
     cmax = maximum(@. sound_speed(p,T) + sqrt(2*ke))
-    dx = model.planet.radius * CFDomains.laplace_dx(model.domain.layer)
+    dx = model.planet.radius * VoronoiSpheres.laplace_dx(model.domain.layer)
     dt = dx * courant / cmax
     final_dt = divisor(dt, interval)
     @info "Time step:" cmax dx dt interval final_dt
@@ -43,6 +43,7 @@ function run_loop(timeloop::TimeLoop, N, interval, state; dt = timeloop.solver.d
     end
     t, nstep = zero(dt), round(Int, interval / dt)
     @info "Time step is $dt seconds, $nstep steps per period of $(interval/3600) hours."
+
     for iter = 1:N*nstep
         advance!(state, solver, state, t, 1)
         if remap_period>0 && mod(iter, remap_period) ==0
