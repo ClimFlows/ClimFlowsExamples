@@ -36,7 +36,6 @@ end
 transpose!(::Void, ::MultiThread, y) = permutedims(y, (2,1)) # for non-ambiguity
 transpose!(::Void, ::LoopManagers.KernelAbstractions_GPU, y) = CUDA.CUBLAS.geam('T', 'T', 1, y, 0, y)
 transpose!(x, ::LoopManagers.KernelAbstractions_GPU, y) = CUDA.CUBLAS.geam!('T', 'T', 1, y, 0, y, x)
-# transpose!(x, ::LoopManagers.KernelAbstractions_GPU{CUDABackend}, y) = error()
 
 ## model setup
 
