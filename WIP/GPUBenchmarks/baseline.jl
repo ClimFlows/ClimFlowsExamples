@@ -2,7 +2,7 @@ function kernel_100fma(a, b, c, out)
     i = (blockIdx().x-1i32) * blockDim().x + threadIdx().x
     @inbounds if i <= length(out)
         aa, bb, cc = a[i], b[i], c[i]
-        for j in 1:33
+        for j in 1:100
             aa = muladd(aa, bb, cc)
             bb = muladd(aa, bb, cc)
             cc = muladd(aa, bb, cc)
@@ -25,7 +25,7 @@ function CUDA_flops(n::Integer=5000, dev::CuDevice=CuDevice(0))
         config = launch_configuration(kernel.fun)
         threads = min(len, config.threads)
         blocks = cld(len, threads)
-        flopcount = 200*len
+        flopcount = 602*len
 
         # warm-up
         kernel(d_a, d_b, d_c, d_out ; threads, blocks)

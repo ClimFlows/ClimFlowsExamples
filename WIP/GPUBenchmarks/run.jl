@@ -4,7 +4,7 @@ using InteractiveUtils
 
 CUDA_functional = false
 try
-    using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda
+    using CUDA: CUDA, CUDABackend, CuArray, CuDevice, device!, i32, @cuda, blockIdx, blockDim, threadIdx, launch_configuration
     global CUDA_functional = CUDA.functional()
 catch e
 end
@@ -22,14 +22,14 @@ using KernelAbstractions
 using LoopManagers: PlainCPU, MultiThread, VectorizedCPU, KernelAbstractions_GPU
 using ManagedLoops: ManagedLoops, @with, @loops, @vec, synchronize, LoopManager, DeviceManager
 
-using GPUArrays: gpu_call, @linearidx, assume
+# using GPUArrays: gpu_call, @linearidx, assume
 using LinearAlgebra: mul!
 
 @loops function muladd100!(_, out, a,b,c)
     let irange = eachindex(out, a,b,c)
         @inbounds @vec for i in irange
             aa, bb, cc = a[i], b[i], c[i]
-            for j in 1:33
+            for j in 1:100
                 aa = muladd(aa,bb,cc)
                 bb = muladd(aa,bb,cc)
                 cc = muladd(aa,bb,cc)
@@ -39,7 +39,19 @@ using LinearAlgebra: mul!
     end
 end
 
+#=
 @loops function memory_bound(_, out, a,b,c)
+    let irange = eachindex(out, a)
+        @inbounds @vec for i in irange
+            aa, bb, cc = a[i], b[i], c[i]
+            out[i] = muladd(aa,bb,cc)
+        end
+    end
+end
+=#
+
+function memory_bound(mgr, out, a,b,c)
+    @with mgr,
     let irange = eachindex(out, a)
         @inbounds @vec for i in irange
             aa, bb, cc = a[i], b[i], c[i]
@@ -59,7 +71,7 @@ function peak(fun::Fun, ops, mgrs ; F=Float32, n=5000, N=n*n) where Fun
                 synchronize(mgr)
             end
         end
-        gflops = ops*N/t*1e-9
+        gflops = ops*prod(N)/t*1e-9
         @info fun mgr gflops
     end
 end
@@ -68,10 +80,10 @@ versioninfo() # check JULIA_EXCLUSIVE and JULIA_NUM_THREADS
 
 if CUDA_functional
     include("baseline.jl")
-    gpu = KernelAbstractions_GPU(CUDABackend(), CuArray)
+    gpu = KernelAbstractions_GPU(CUDABackend())
     CUDA.versioninfo()
 elseif oneAPI_functional
-    gpu = KernelAbstractions_GPU(oneAPIBackend(), oneArray)
+    gpu = KernelAbstractions_GPU(oneAPIBackend())
     oneAPI.versioninfo()
 else
     gpu = PlainCPU()
@@ -83,7 +95,7 @@ simd(N=8) = VectorizedCPU(N)
 multi(N=8, nt=Threads.nthreads()) = MultiThread(simd(N), nt)
 
 mgrs = (gpu, simd(), simd(16), multi(), multi(16), multi(32), multi(64))
-peak(muladd100!, 200, mgrs)
+peak(muladd100!, 602, mgrs)
 
 mgrs = (gpu, simd(), multi())
 peak(memory_bound, 4*4, mgrs ; n=5_000)

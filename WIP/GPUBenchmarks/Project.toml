@@ -21,12 +21,7 @@ NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
 SIMDMathFunctions = "d22a7203-ad50-4fbc-abc4-d6ac724cca58"
-
-[compat]
-CFDomains = "0.3.4"
-CFHydrostatics = "0.3.6"
-LoopManagers = "0.2"
-ManagedLoops = "0.1.10"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [extras]
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
