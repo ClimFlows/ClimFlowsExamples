@@ -19,7 +19,7 @@ simulation and produce `PV.mp4` in this directory.
 
 ### CPU (Float64)
 
-The CPU environment was verified with Julia 1.10.
+Use Julia 1.10 or later for the CPU environment.
 
 ```sh
 julia --project=CPU install.jl
