@@ -12,7 +12,7 @@ include("preamble.jl")
 
 @time_imports begin
     if use_cuda
-        using CUDA
+        import CUDA
         CUDA.allowscalar(false)
     end
 
