@@ -1,4 +1,5 @@
 using CFDomains
+using StaticArrays: SVector
 
 function NCARL30(nz, ptop::Float) where Float
 
@@ -142,7 +143,9 @@ function NCARL30(nz, ptop::Float) where Float
 #    @info "NCARL30" ptop P0*hyai[end]
     @assert ptop ≈ P0*hyai[end]
 
-    return CFDomains.HybridCoordinate(ptop, P0*hyai, P0*hyam, hybi, hybm)
+    coord = CFDomains.HybridCoordinate(ptop, P0*hyai, P0*hyam, hybi, hybm)
+    # These small coefficient tables are passed by value to managed loops.
+    return CFDomains.HybridCoordinate(coord.ptop, SVector{61}(coord.a), SVector{61}(coord.b), Val(nz))
 end
 
 function write_apbp(choices, model)

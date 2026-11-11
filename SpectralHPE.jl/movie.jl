@@ -1,15 +1,17 @@
 @time_imports begin
     import ClimFlowsPlots.SpectralSphere as Plots
     using CFDomains.VerticalInterpolation: interpolate!
+    using GeoMakie
     using CairoMakie: Makie, record
     using NetCDF
 end
 
 function movie(model, diags, tape, var ; filename=joinpath(@__DIR__, "movie.mp4"))
     @info "Preparing plots..."
-    diag(state) = var(open(diags; model, state))
-    lons = Plots.bounds_lon(sph.lon[1, :] * (180 / pi)) #[1:2:end]
-    lats = Plots.bounds_lat(sph.lat[:, 1] * (180 / pi)) #[1:2:end]
+    diag(state) = Array(var(open(diags; model, state)))
+    sph = model.domain.layer
+    lons = rad2deg.(Array(sph.lon)[1, :])
+    lats = rad2deg.(Array(sph.lat)[:, 1])
     diag_obs = Makie.Observable(diag(tape[1]))
     fig = Plots.orthographic(lons .- 90, lats, diag_obs; colormap = :berlin)
     record(fig, filename, eachindex(tape)) do i
@@ -20,13 +22,15 @@ end
 
 var_ref(var) = function(session)
     model = session.model
+    # Interpolation and NetCDF output operate on host arrays.
+    field = Array(var(session))
     interpolated = interpolate!(
-        model.mgr,
+        PlainCPU(),
         void,
         model.domain,
-        var(session),
-        session.pressure,
-        [85000.0, 50000.0],
+        field,
+        Array(session.pressure),
+        eltype(field)[85000, 50000],
         false,
     )
     return transpose(interpolated[:, :, 1])
@@ -62,7 +66,7 @@ function save(tape, filename = "SpectralHPE.nc"; vars...)
                     end
                 end
 
-                write(reverse(var(session); dims = 2))
+                write(reverse(Array(var(session)); dims = 2))
             end
         end
     end

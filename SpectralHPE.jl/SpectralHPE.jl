@@ -7,7 +7,7 @@ include("run.jl");
 
 include("movie.jl")
 
-transp(x::Matrix) = transpose(x)
+transp(x::AbstractMatrix) = transpose(x)
 transp(x) = permutedims(x, (2,1,3))
 getvar(sym::Symbol) = diags->transp(getproperty(diags, sym))
 getvars(syms...) = NamedTuple{syms}(map(getvar, syms))
