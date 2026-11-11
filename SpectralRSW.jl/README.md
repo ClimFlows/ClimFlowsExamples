@@ -31,7 +31,7 @@ environment by default.
 
 ### CUDA (Float32)
 
-Use Julia 1.12 and an NVIDIA GPU with a driver that supports CUDA 12.9.
+Use Julia 1.11 and an NVIDIA GPU with a driver that supports CUDA 12.9.
 The CUDA project selects the CUDA 12.9 runtime so SHTns_jll 3.7 loads
 its CUDA artifact, including on drivers that support CUDA 13.
 
