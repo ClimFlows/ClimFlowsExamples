@@ -199,7 +199,9 @@ pv = Makie.Observable(upscale(pv))
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
 lons = bounds_lon(Array(model.sph.lon)[1,:]*(180/pi))[1:2:end]
 lats = bounds_lat(Array(model.sph.lat)[:,1]*(180/pi))[1:2:end]
-fig = orthographic(lons, lats, pv; colormap = :berlin)
+# GeoMakie 0.7 needs geographic limits for the orthographic projection.
+limits = use_cuda ? (extrema(lons), extrema(lats)) : (nothing, nothing)
+fig = orthographic(lons, lats, pv; limits, colormap = :berlin)
 
 solver! = solver(state0)
 stream = use_cuda ? CUDA.stream() : nothing
