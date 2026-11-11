@@ -28,6 +28,7 @@ include("preamble.jl")
 
     using GeoMakie, CairoMakie, ColorSchemes
     using CookBooks
+    import ClimFlowsPlots.SpectralSphere as SpectralPlots
 end
 
 struct HyperDiffusion{F}
@@ -194,14 +195,12 @@ pv = open(book; model, state=state0) do diags
 end
 # Create a Makie observable and make a plot from it
 # When we later update pv, the plot will update too.
-pv = Makie.Observable(upscale(pv))
+pv = Makie.Observable(SpectralPlots.upscale(pv))
 
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-lons = bounds_lon(Array(model.sph.lon)[1,:]*(180/pi))[1:2:end]
-lats = bounds_lat(Array(model.sph.lat)[:,1]*(180/pi))[1:2:end]
-# GeoMakie 0.7 needs geographic limits for the orthographic projection.
-limits = use_cuda ? (extrema(lons), extrema(lats)) : (nothing, nothing)
-fig = orthographic(lons, lats, pv; limits, colormap = :berlin)
+lons = SpectralPlots.bounds_lon(Array(model.sph.lon)[1,:]*(180/pi))[1:2:end]
+lats = SpectralPlots.bounds_lat(Array(model.sph.lat)[:,1]*(180/pi))[1:2:end]
+fig = SpectralPlots.orthographic(lons, lats, pv; colormap = :berlin)
 
 solver! = solver(state0)
 stream = use_cuda ? CUDA.stream() : nothing
@@ -235,6 +234,6 @@ stream = use_cuda ? CUDA.stream() : nothing
     # main thread making the movie
     record(fig, "$(@__DIR__)/PV.mp4", 1:N) do hour
         @info toc("") hour
-        pv[] = upscale(take!(channel))
+        pv[] = SpectralPlots.upscale(take!(channel))
     end
 end
