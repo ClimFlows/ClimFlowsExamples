@@ -252,7 +252,7 @@ weakdeps = ["SparseArrays"]
 [[deps.ClimFlowsPlots]]
 deps = ["BoundingSphere", "ColorSchemes", "GeometryBasics", "LightGraphs", "Metis", "StaticArrays"]
 git-tree-sha1 = "12494059d01677f6176c5eb4f8e66992f37a5339"
-repo-rev = "62eb728f2308bab17f42a1a7eb13830daa530794"
+repo-rev = "v0.2.4"
 repo-url = "https://github.com/ClimFlows/ClimFlowsPlots.jl.git"
 uuid = "dd0979db-5334-4d13-8d2e-fa88a4f47f12"
 version = "0.2.4"
