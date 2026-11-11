@@ -1,6 +1,6 @@
 cd(@__DIR__)
 import Pkg;
-Pkg.activate(@__DIR__); #src
+isfile(joinpath(@__DIR__, "Project.toml")) && Pkg.activate(@__DIR__); #src
 unique!(push!(LOAD_PATH, "$(@__DIR__)/../include/"))
 
 using InteractiveUtils
@@ -49,9 +49,10 @@ end #src
     field = 0.5*(field[:, 1:2:end] + field[:,2:2:end])
 end
 
-function orthographic(lons, lats, field; options...)
+function orthographic(lons, lats, field; limits=(nothing, nothing), options...)
     fig = Figure()
-    ga = GeoAxis(fig[1, 1]; dest = "+proj=ortho +lon_0=19 +lat_0=50")
+    ga = GeoAxis(fig[1, 1]; dest = "+proj=ortho +lon_0=19 +lat_0=50",
+        limits)
     surface!(ga, lons, lats, field; shading = NoShading, options...)
     lines!(ga, GeoMakie.coastlines())
     return fig

@@ -2,10 +2,20 @@
 
 ## Preamble
 
+import Pkg
+const cuda_project = joinpath(@__DIR__, "CUDA", "Project.toml")
+const use_cuda = Base.active_project() == cuda_project
+Pkg.activate(use_cuda ? dirname(cuda_project) : joinpath(@__DIR__, "CPU"))
+
 const debug = false
 include("preamble.jl")
 
 @time_imports begin
+    if use_cuda
+        import CUDA
+        CUDA.allowscalar(false)
+    end
+
     using MutatingOrNot: void, Void
     using SHTnsSpheres: SHTnsSpheres, SHTnsSphere, void, erase,
         analysis_scalar!, synthesis_scalar!,
@@ -30,12 +40,15 @@ function (hd::HyperDiffusion)(storage, coefs, sph)
     @. storage = (1-nu*(-laplace/(lmax*(lmax+1)))^n)*coefs
 end
 
-struct RSW{F, HD}
-    sph::SHTnsSphere
-    fcov::Matrix{F} # 2-form: fcov = 2Ω * radius^2 * sin(latitude)
+struct RSW{F, HD, S<:SHTnsSphere, A<:AbstractMatrix{F}}
+    sph::S
+    fcov::A # 2-form: fcov = 2Ω * radius^2 * sin(latitude)
     radius::F
     filter::HD
 end
+
+RSW{F, HD}(sph, fcov, radius, filter) where {F, HD} =
+    RSW(sph, convert(Matrix{F}, fcov), convert(F, radius), convert(HD, filter))
 
 RSW(sph, Omega::Real, radius, hd) = RSW(sph, (2 * radius^2 * Omega) * sph.z, radius, hd)
 
@@ -129,26 +142,30 @@ diagnostics() = CookBook(; velocity, geopotential, vorticity, potential_vorticit
 # setup
 
 function initial_state(model, gh, ulon, ulat)
-    (; radius) = model
+    (; radius, sph) = model
     gh_spec = analysis_scalar!(void, radius^2*gh, sph)
     uv_spec = analysis_vector!(void, vector_spat(-radius * ulat, radius * ulon), sph)
     RSW_state(gh_spec, uv_spec)
 end
 
 function setup(case, sph ; courant = 2., interval=3600.0, hd_n=8, hd_nu=1e-2)
-    radius = case.params.R0
-    hd = HyperDiffusion(hd_n, hd_nu)
-    model = RSW(sph, case.params.Omega, radius, hd)
+    F = eltype(sph.z)
+    radius = F(case.params.R0)
+    hd = HyperDiffusion(hd_n, F(hd_nu))
+    model = RSW(sph, F(case.params.Omega), radius, hd)
 
-    f(n) = map((lon, lat) -> case(lon, lat)[n], sph.lon, sph.lat)
+    # The analytical test case is sampled on the host once.
+    lon, lat = Array(sph.lon), Array(sph.lat)
+    f(n) = map((lon, lat) -> F(case(lon, lat)[n]), lon, lat)
     gh, ulon, ulat = f(1), f(2), f(3)
-    state0 = initial_state(model, gh, ulon, ulat)
+    to_grid(a) = copyto!(similar(sph.z), a)
+    state0 = initial_state(model, to_grid(gh), to_grid(ulon), to_grid(ulat))
 
     # time step based on maximum angular velocity of gravity waves
     umax = sqrt(maximum(@. ulon^2 + ulat^2))
-    cmax = (umax + sqrt(case.params.gH0)) / radius
-    dt = courant / cmax / sqrt(sph.lmax * sph.lmax + 1)
-    dt = divisor(dt, interval)
+    cmax = (umax + sqrt(F(case.params.gH0))) / radius
+    dt = F(courant) / cmax / sqrt(F(sph.lmax * sph.lmax + 1))
+    dt = divisor(dt, F(interval))
     @info "Time step" umax, cmax, dt
 
     scheme = CFTimeSchemes.RungeKutta4(model)
@@ -162,10 +179,10 @@ divisor(dt, T) = T / ceil(Int, T / dt)
 # main program
 
 @info toc("Initializing spherical harmonics...")
-sph = SHTnsSpheres.SHTnsSphere(128)
+sph = use_cuda ? SHTnsSphere(128; backend=:cuda, precision=Float32) : SHTnsSphere(128)
 
 @info toc("Setting up...")
-case = Williamson91{6}()
+case = Williamson91{6}(eltype(sph.z))
 interval = 3600.0
 model, scheme, solver, state0 = setup(case, sph ; interval)
 book = diagnostics()
@@ -173,30 +190,34 @@ book = diagnostics()
 # Initial potential vorticity
 pv = open(book; model, state=state0) do diags
     pv = diags.potential_vorticity
-    pv = transpose(max.(0.0, pv))
+    transpose(Array(max.(zero(eltype(pv)), pv)))
 end
 # Create a Makie observable and make a plot from it
 # When we later update pv, the plot will update too.
 pv = Makie.Observable(upscale(pv))
 
 # see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-lons = bounds_lon(model.sph.lon[1,:]*(180/pi))[1:2:end]
-lats = bounds_lat(model.sph.lat[:,1]*(180/pi))[1:2:end]
-fig = orthographic(lons, lats, pv; colormap = :berlin)
+lons = bounds_lon(Array(model.sph.lon)[1,:]*(180/pi))[1:2:end]
+lats = bounds_lat(Array(model.sph.lat)[:,1]*(180/pi))[1:2:end]
+# GeoMakie 0.7 needs geographic limits for the orthographic projection.
+limits = use_cuda ? (extrema(lons), extrema(lats)) : (nothing, nothing)
+fig = orthographic(lons, lats, pv; limits, colormap = :berlin)
 
-state = deepcopy(state0)
 solver! = solver(state0)
+stream = use_cuda ? CUDA.stream() : nothing
 
 @info toc("Starting simulation.")
 
 @time let N=240 # number of hours to simulate
     # separate thread running the simulation
     channel = Channel(spawn=true) do ch
+        # SHTns uses the stream on which its plan was created.
+        use_cuda && CUDA.stream!(stream)
         state = deepcopy(state0)
-        nstep = Int(interval/solver!.dt)
+        nstep = round(Int, interval/solver!.dt)
         for iter in 1:N
             for istep in 1:nstep
-                advance!(state, solver!, state, 0.0, 1)
+                advance!(state, solver!, state, zero(solver!.dt), 1)
                 (; gh_spec, uv_spec) = state
                 (; toroidal) = uv_spec
                 toroidal = model.filter(toroidal, toroidal, model.sph)
@@ -204,7 +225,8 @@ solver! = solver(state0)
                 state = RSW_state(gh_spec, uv_spec)
             end
             pv_worker = open(book; model, state) do diags
-                transpose(max.(0.0, diags.potential_vorticity))
+                pv = diags.potential_vorticity
+                transpose(Array(max.(zero(eltype(pv)), pv)))
             end
             put!(ch, pv_worker)
         end
