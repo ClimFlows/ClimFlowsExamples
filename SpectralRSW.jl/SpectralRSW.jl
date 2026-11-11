@@ -188,19 +188,26 @@ interval = 3600.0
 model, scheme, solver, state0 = setup(case, sph ; interval)
 book = diagnostics()
 
-# Initial potential vorticity
-pv = open(book; model, state=state0) do diags
-    pv = diags.potential_vorticity
-    transpose(Array(max.(zero(eltype(pv)), pv)))
+# Close the plotting surface at the periodic seam and at the poles.
+@views function plot_pv(pv)
+    # SHTns orders latitude north to south. Plot it south to north.
+    host_pv = transpose(Array(max.(zero(eltype(pv)), pv)))
+    field = SpectralPlots.upscale(host_pv[:, end:-1:1])
+    nlon = size(field, 1)
+    south = sum(field[:, 1]) / nlon
+    north = sum(field[:, end]) / nlon
+    capped = hcat(fill(south, nlon), field, fill(north, nlon))
+    return vcat(capped, capped[1:1, :])
 end
-# Create a Makie observable and make a plot from it
-# When we later update pv, the plot will update too.
-pv = Makie.Observable(SpectralPlots.upscale(pv))
 
-# see https://docs.makie.org/stable/explanations/colors/index.html for colormaps
-lons = SpectralPlots.bounds_lon(Array(model.sph.lon)[1,:]*(180/pi))[1:2:end]
-lats = SpectralPlots.bounds_lat(Array(model.sph.lat)[:,1]*(180/pi))[1:2:end]
-fig = SpectralPlots.orthographic(lons, lats, pv; colormap = :berlin)
+pv = open(book; model, state=state0) do diags
+    Makie.Observable(plot_pv(diags.potential_vorticity))
+end
+
+paired_centers(coords) = (coords[1:2:end] + coords[2:2:end]) * (90 / pi)
+lons = paired_centers(Array(model.sph.lon)[1,:])
+lats = reverse(paired_centers(Array(model.sph.lat)[:,1]))
+fig = SpectralPlots.orthographic([lons; first(lons) + 360], [-90; lats; 90], pv; colormap = :berlin)
 
 solver! = solver(state0)
 stream = use_cuda ? CUDA.stream() : nothing
@@ -224,8 +231,7 @@ stream = use_cuda ? CUDA.stream() : nothing
                 state = RSW_state(gh_spec, uv_spec)
             end
             pv_worker = open(book; model, state) do diags
-                pv = diags.potential_vorticity
-                transpose(Array(max.(zero(eltype(pv)), pv)))
+                plot_pv(diags.potential_vorticity)
             end
             put!(ch, pv_worker)
         end
@@ -234,6 +240,6 @@ stream = use_cuda ? CUDA.stream() : nothing
     # main thread making the movie
     record(fig, "$(@__DIR__)/PV.mp4", 1:N) do hour
         @info toc("") hour
-        pv[] = SpectralPlots.upscale(take!(channel))
+        pv[] = take!(channel)
     end
 end
