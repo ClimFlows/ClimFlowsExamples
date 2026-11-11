@@ -36,7 +36,7 @@ git clone git@github.com:ClimFlows/ClimFlowsExamples.git
 # then
 cd ClimFlowsExamples/SpectralRSW.jl
 ```
-You may of course `cd` into another project.
+You may of course `cd` into another project. For SpectralRSW, the commands below use the CPU environment. See the [SpectralRSW README](SpectralRSW.jl/README.md) for CUDA.
 The main program is a `.jl` file with the same name as the directory, here `SpectralRSW.jl`. Before running in, you must install dependencies:
 ```shell
 julia install.jl
@@ -109,7 +109,8 @@ export JULIA_PKG_OFFLINE=true
 
 Since we have not precompiled on the login node, we should do it now (once):
 ```shell
-julia --project=. -e "using Pkg; Pkg.precompile()"
+julia --project=CPU -e "using Pkg; Pkg.precompile()" # SpectralRSW
+# For examples with a Project.toml at the root, use --project=.
 ```
 
 You can now [run](run) the project. For full reproducibility, you may prefer:

@@ -1,6 +1,6 @@
 cd(@__DIR__)
 import Pkg;
-Pkg.activate(@__DIR__); #src
+isfile(joinpath(@__DIR__, "Project.toml")) && Pkg.activate(@__DIR__); #src
 unique!(push!(LOAD_PATH, "$(@__DIR__)/../include/"))
 
 using InteractiveUtils

@@ -1,0 +1,33 @@
+[compat]
+CFTimeSchemes = "0.3"
+CUDA = "5"
+CairoMakie = "0.11"
+ClimFlowsTestCases = "0.2"
+CookBooks = "0.2"
+MutatingOrNot = "0.1"
+SHTnsSpheres = "0.2.18"
+SHTns_jll = "3.7"
+julia = "1.12"
+
+[deps]
+CFTimeSchemes = "79282218-dfaf-41aa-91df-a06f65ece871"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+ClimFlowsTestCases = "55a4ed1b-ebae-44a5-bd1f-98d158431b8a"
+ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+CookBooks = "7bce7c31-0f61-4fd7-bdaf-6b04abfa2cc7"
+GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
+MutatingOrNot = "6a37069a-9a67-4b2d-a34a-f09ab4b23c7c"
+SHTnsSpheres = "9e5c175a-5132-4517-85a1-2957ec255f89"
+SHTns_jll = "daf09cc5-9ab3-509e-9618-0b89086eb825"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
+
+# SHTns_jll 3.7 provides a CUDA 12 artifact.
+[preferences.CUDA_Runtime_jll]
+version = "12.9"
+
+[sources.SHTnsSpheres]
+rev = "v0.2.18"
+url = "https://github.com/ClimFlows/SHTnsSpheres.jl.git"
