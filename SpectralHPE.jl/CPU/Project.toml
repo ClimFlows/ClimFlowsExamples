@@ -32,7 +32,7 @@ GeoMakie = "0.7.15"
 julia = "1.11"
 LoopManagers = "0.3"
 NetCDF = "0.12"
-SHTnsSpheres = "0.2.18"
+SHTnsSpheres = "0.2.19"
 SHTns_jll = "~3.6.6"
 SIMDMathFunctions = "0.1.1"
 StaticArrays = "1"
@@ -43,5 +43,9 @@ rev = "v0.2.4"
 url = "https://github.com/ClimFlows/ClimFlowsPlots.jl.git"
 
 [sources.CFHydrostatics]
-rev = "2abab1b7368348a99064faf22671879ae6d052a9"
+rev = "fc6d3f661a49f9b965b291749847198cb3d5b671"
 url = "https://github.com/ClimFlows/CFHydrostatics.jl.git"
+
+[sources.SHTnsSpheres]
+rev = "863a1ea9e9b5ca64af1bc5a86198bf23b741278d"
+url = "https://github.com/ClimFlows/SHTnsSpheres.jl.git"

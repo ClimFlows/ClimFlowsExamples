@@ -2,7 +2,7 @@
 
 julia_version = "1.11.9"
 manifest_format = "2.0"
-project_hash = "3f30a9369ffbe597ed4103398af08df00bde3f0d"
+project_hash = "ae157a30d60a85f16496df079e8ebcf5531fdc76"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -244,8 +244,8 @@ version = "0.5.1"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
-git-tree-sha1 = "e637c800132d22da29eb37e6af968a933ecacac0"
-repo-rev = "2abab1b7368348a99064faf22671879ae6d052a9"
+git-tree-sha1 = "7d2527592d3518e34fa4ae7b0e846875a33fb7b3"
+repo-rev = "fc6d3f661a49f9b965b291749847198cb3d5b671"
 repo-url = "https://github.com/ClimFlows/CFHydrostatics.jl.git"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
 version = "0.5.2"
@@ -1979,11 +1979,11 @@ version = "0.7.0"
 
 [[deps.SHTnsSpheres]]
 deps = ["MutatingOrNot", "PackageExtensionCompat", "Polyester", "SHTns_jll"]
-git-tree-sha1 = "e33c280f434ede8f9975b16bdb262585ccfaee20"
-repo-rev = "v0.2.18"
+git-tree-sha1 = "cec0ab4b13111890ca4ce89500b9e73cdb040cd7"
+repo-rev = "863a1ea9e9b5ca64af1bc5a86198bf23b741278d"
 repo-url = "https://github.com/ClimFlows/SHTnsSpheres.jl.git"
 uuid = "9e5c175a-5132-4517-85a1-2957ec255f89"
-version = "0.2.18"
+version = "0.2.19"
 
     [deps.SHTnsSpheres.extensions]
     CUDA_Ext = "CUDA"

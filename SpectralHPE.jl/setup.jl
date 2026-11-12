@@ -108,7 +108,7 @@ mgr = use_cuda ? KernelAbstractions_GPU(CUDA.CUDABackend()) : MultiThread(simd, 
 
 @info "Initializing spherical harmonics..."
 @time sph = if use_cuda
-    SHTnsSphere(choices.nlat; backend=:cuda, precision=choices.Prec, batch=choices.nz)
+    SHTnsSphere(choices.nlat; backend=:cuda, precision=choices.Prec, batch=(1, choices.nz, choices.nz + 1))
 else
     SHTnsSphere(choices.nlat, nthreads)
 end

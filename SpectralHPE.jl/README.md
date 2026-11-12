@@ -41,7 +41,8 @@ julia --project=CUDA --startup-file=no SpectralHPE.jl
 
 The analytical initial condition is sampled on the CPU. The solver advances
 `Float32` grid fields and `ComplexF32` spectral coefficients on the GPU.
-Fields are copied to the CPU for display, pressure-level interpolation and
-NetCDF output.
+The CUDA sphere prepares SHTns plans for surface, layer and interface
+fields once and reuses them throughout the run. Fields are copied to the
+CPU for display, pressure-level interpolation and NetCDF output.
 
 https://github.com/user-attachments/assets/71d3168e-2d8e-4c71-9cf8-9b0d936a8881
