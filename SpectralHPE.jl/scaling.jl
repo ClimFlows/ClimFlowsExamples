@@ -2,9 +2,9 @@
 function duplicate_model(choices, params, model, nt)
     sph = SHTnsSphere(model.domain.layer, nt)
     mgr = MultiThread(VectorizedCPU(), nt)
-    case = testcase(choices.TestCase, Float64)
+    case = choices.TestCase(eltype(sph.lon))
     params = merge(choices, case.params, params)
-    surface_geopotential(lon, lat) = initial_surface(lon, lat, case)[2]
+    surface_geopotential(lon, lat) = initial(case, lon, lat)[2]
     return HPE(params, mgr, sph, model.vcoord, surface_geopotential, model.gas)
 end
 

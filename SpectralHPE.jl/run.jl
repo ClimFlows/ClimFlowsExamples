@@ -13,7 +13,7 @@ end
 function TimeLoop(info::TimeLoopInfo, u0, time_step, mutating)
     (; model, scheme, remap_period, dissipation, diags) = info
     if mutating
-        solver = IVPSolver(scheme, time_step, u0, 0.0)
+        solver = IVPSolver(scheme, time_step, u0, zero(time_step))
     else
         solver = IVPSolver(scheme, time_step)
     end
@@ -91,11 +91,11 @@ function max_time_step(info::TimeLoopInfo, courant, interval, state)
     session = open(diags; model, state)
     uv = session.uv
     cmax = maximum(session.sound_speed + @. sqrt(uv.ucolat^2 + uv.ulon^2))
-    dt = model.planet.radius * courant / cmax / sqrt(sphere.lmax * sphere.lmax + 1)
+    dt = model.planet.radius * courant / cmax / sqrt(typeof(cmax)(sphere.lmax^2 + 1))
     dt = divisor(dt, interval)
 end
 
-divisor(dt, T) = T / ceil(Int, T / dt)
+divisor(dt, T) = oftype(dt, T) / ceil(Int, T / dt)
 
 function simulation(params, model, diags, state0; ndays=params.ndays)
     diag(state) = -reverse(open(diags; model, state).uv.ucolat[:, :, 1]; dims=1)
@@ -115,7 +115,7 @@ function simulation(params, model, diags, state0; ndays=params.ndays)
             push!(tape, deepcopy(state))
             if mod(params.interval * iter, 86400) == 0
                 @info "day $(params.interval*iter/86400)"
-                display(heatmap(diag(state)))
+                display(heatmap(Array(diag(state))))
             end
         end
     return tape
