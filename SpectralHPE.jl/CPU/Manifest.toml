@@ -2,7 +2,7 @@
 
 julia_version = "1.11.9"
 manifest_format = "2.0"
-project_hash = "5ff2b44429f51bb448f83e0d54c89b01201cf73e"
+project_hash = "e9bc692855109be4fb11c0edad0bcbef332c88b9"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -220,9 +220,9 @@ version = "0.5.1"
 
 [[deps.CFHydrostatics]]
 deps = ["CFDomains", "CFPlanets", "CFTimeSchemes", "CFTransport", "ClimFluids", "CookBooks", "ManagedLoops", "MutatingOrNot", "PackageExtensionCompat", "VoronoiSpheres"]
-git-tree-sha1 = "3ab1d49838a3511b5a247fd195421b8517e57953"
+git-tree-sha1 = "bcb6828362b3ad3da746e4b1e5befa70f8be248c"
 uuid = "0dc8c93d-0116-402a-b00b-85ddfe5501a2"
-version = "0.5.2"
+version = "0.5.3"
 weakdeps = ["Adapt", "SHTnsSpheres"]
 
     [deps.CFHydrostatics.extensions]
@@ -1777,9 +1777,9 @@ version = "0.7.0"
 
 [[deps.SHTnsSpheres]]
 deps = ["MutatingOrNot", "PackageExtensionCompat", "Polyester", "SHTns_jll"]
-git-tree-sha1 = "5aead56e11f517b196c4e548ac5cc019b2f7c937"
+git-tree-sha1 = "94e5879308f220c0594d92d2e372e998c05636df"
 uuid = "9e5c175a-5132-4517-85a1-2957ec255f89"
-version = "0.2.19"
+version = "0.2.20"
 
     [deps.SHTnsSpheres.extensions]
     CUDA_Ext = "CUDA"
