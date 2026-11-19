@@ -1,5 +1,7 @@
 using Pkg;
-Pkg.activate(@__DIR__);
+const cuda_project = joinpath(@__DIR__, "CUDA", "Project.toml")
+const use_cuda = Base.active_project() == cuda_project
+Pkg.activate(use_cuda ? dirname(cuda_project) : joinpath(@__DIR__, "CPU"));
 Pkg.Registry.add() # makes sure we do not hide the General registry
 Pkg.Registry.add(RegistrySpec(url = "https://github.com/ClimFlows/JuliaRegistry.git"))
 Pkg.resolve()
@@ -9,6 +11,7 @@ Pkg.instantiate()
 using ClimFlowsData
 ClimFlowsData.DYNAMICO_reader(nothing, "")
 
-# tell CUDA to use local toolkit
-using CUDA
-CUDA.set_runtime_version!(; local_toolkit=true)
+if use_cuda
+    using CUDA
+    CUDA.set_runtime_version!(v"12.9")
+end

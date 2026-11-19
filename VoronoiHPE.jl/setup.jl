@@ -9,12 +9,18 @@
     using UnicodePlots: heatmap, scatterplot
 
     # lightweight dependencies
-    using SIMDMathFunctions
+    if use_cuda
+        import CUDA
+        import KernelAbstractions
+        CUDA.allowscalar(false)
+    else
+        using SIMDMathFunctions
+    end
     using Strided: Strided, @strided
     using BenchmarkTools: @btime, @benchmark
 
     import ManagedLoops, LoopManagers
-    using LoopManagers: LoopManager, GPUConfig, PlainCPU, VectorizedCPU, MultiThread, tune, no_simd
+    using LoopManagers: LoopManager, GPUConfig, PlainCPU, VectorizedCPU, MultiThread, KernelAbstractions_GPU, tune, no_simd
     import CFDomains
     using CFDomains: SigmaCoordinate, HyperDiffusion, void
     import VoronoiSpheres

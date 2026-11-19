@@ -1,5 +1,8 @@
 # # Hydrostatic primitive equations, mimetic finite differences on a spherical Voronoi mesh
-using Pkg; Pkg.activate(@__DIR__)
+using Pkg
+const cuda_project = joinpath(@__DIR__, "CUDA", "Project.toml")
+const use_cuda = Base.active_project() == cuda_project
+Pkg.activate(use_cuda ? dirname(cuda_project) : joinpath(@__DIR__, "CPU"))
 using InteractiveUtils
 
 include("setup.jl")
@@ -7,12 +10,13 @@ include("NCARL30.jl")
 include("config.jl")
 
 using CFHydrostatics.Voronoi: Dynamics, Dynamics.hydrostatic_balance_HV!
-Dynamics.configure(mgr, ::typeof(hydrostatic_balance_HV!)) = ManagedLoops.configure(mgr, GPUConfig(8,1))
+Dynamics.configure(mgr, ::typeof(hydrostatic_balance_HV!)) =
+    use_cuda ? ManagedLoops.configure(mgr, GPUConfig(8,1)) : mgr
 
 using CFTimeSchemes
 CFTimeSchemes.Update.manage(x, mgr::LoopManager) = mgr[x]
 function CFTimeSchemes.update!(new, model, old, args...)
-    mgr = ManagedLoops.configure(model.mgr, GPUConfig(8,8))
+    mgr = use_cuda ? ManagedLoops.configure(model.mgr, GPUConfig(8,8)) : model.mgr
     CFTimeSchemes.Update.update!(new, mgr, old, args...) 
 end
 
