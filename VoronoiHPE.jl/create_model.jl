@@ -1,33 +1,11 @@
-cpu, gpu = choices.cpu, choices.cpu
+cpu, gpu = identity, identity
 
-if choices.try_gpu
-    @time_imports using Adapt, KernelAbstractions
-
-    if gpu == cpu
-        try
-            @time_imports using oneAPI
-            if oneAPI.functional()
-                @info "Functional oneAPI GPU detected !"
-                oneAPI.versioninfo()
-                global gpu = LoopManagers.KernelAbstractions_GPU(oneAPIBackend(), choices.blocks.oneAPI)
-            end
-        catch
-            @info "oneAPI not found in the current project, add it if you want oneAPI GPU acceleration"
-        end
-    end
-
-    if gpu == cpu
-        try
-            @time_imports using CUDA
-            if CUDA.functional()
-                @info "Functional CUDA GPU detected !"
-                CUDA.versioninfo()
-                global gpu = LoopManagers.KernelAbstractions_GPU(CUDABackend(), choices.blocks.CUDA)
-            end
-        catch
-            @info "CUDA not found in the current project, add it if you want CUDA GPU acceleration"
-        end
-    end
+if use_cuda
+    @time_imports using Adapt
+    CUDA.functional() || error("CUDA was selected, but no functional CUDA GPU is available")
+    CUDA.versioninfo()
+    cpu = state -> map(Array, state)
+    global gpu = KernelAbstractions_GPU(CUDA.CUDABackend(), choices.blocks.CUDA)
 end
 
 model, diags, state0 = let params = rmap(choices.precision, params)
@@ -83,7 +61,7 @@ if choices.compare_to_spectral
         lons, lats = to_deg * ssphere.lon[1, :], to_deg * ssphere.lat[:, 1]
         permute(data) = permutedims(data, (2, 3, 1)) # k=1,i=2,j=3 -> i=2,j=3,k=1
         permute(data::Matrix) = data
-        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(interpolation_mesh(vsphere), lons, lats)
+        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(lons, lats, interpolation_mesh(vsphere))
         permute ∘ interp ∘ Array
     end
 
@@ -110,7 +88,7 @@ else
         lons, lats = F.(1:2:360), F.(-89:2:90)
         permute(data) = permutedims(data, (2, 3, 1))
         permute(data::Matrix) = data
-        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(interpolation_mesh(vsphere), lons, lats)
+        interp = ClimFlowsPlots.SphericalInterpolations.lonlat_interp(lons, lats, interpolation_mesh(vsphere))
         permute ∘ interp ∘ Array
     end
 end

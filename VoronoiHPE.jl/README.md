@@ -9,16 +9,35 @@ The vertical coordinate is Lagrangian. For long-term stability, prognostic field
 vertically remapped to a hybrid pressure coordinate after each full Runge-Kutta scheme. 
 Mass budget is solved in flux-form and momentum budget in curl (vector-invariant) form, (Dubos et al. GMD 2015). 
 
-Install dependencies with:
-```shell
-julia install.jl
+## Run on CPU or CUDA
+
+Run these commands from `VoronoiHPE.jl/` with Julia 1.11 or later. Both
+environments run the same case and write `VoronoiHPE.nc` in the working
+directory. Move an existing output file before rerunning the example.
+
+### CPU (Float64)
+
+```sh
+julia --project=CPU install.jl
+julia --project=CPU --threads=2 --startup-file=no VoronoiHPE.jl
 ```
 
-Choices and parameters are defined in `config.jl` and can be modified, to some extent.
+Running `julia install.jl` or `julia VoronoiHPE.jl` also selects the CPU
+environment by default.
 
-Run with :
-```shell
-julia --startup-file=no VoronoiHPE.jl
+### CUDA (Float32)
+
+Use an NVIDIA GPU with a driver that supports CUDA 12.9. The CUDA project
+selects that runtime.
+
+```sh
+julia --project=CUDA install.jl
+julia --project=CUDA --startup-file=no VoronoiHPE.jl
 ```
 
-If detected, a GPU recognized by `CUDA` or `oneAPI` will be used. The simulation produces a NetCDF file `VoronoiHPE.nc`.
+The initial condition and Voronoi mesh are prepared on the CPU. The model and
+state are then adapted to CUDA for time integration. Snapshots are copied back
+to the CPU for interpolation and NetCDF output.
+
+Choices and parameters are defined in `config.jl` and can be modified, to some
+extent.
